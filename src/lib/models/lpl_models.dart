@@ -12,6 +12,8 @@
 //   GameTypeName（阶段：入围赛/瑞士轮/淘汰赛）、GameProcName（第几天/八进四…）
 //   GameModeName（BO1/BO3/BO5）、GamePlaceName、GameName
 
+import '../core/team_alias.dart';
+
 /// 一场 LPL 官方赛程
 class LplMatch {
   const LplMatch({
@@ -127,7 +129,8 @@ class LplMatch {
   /// 用于和虎扑比赛做粗匹配：队名排序 + 日期
   String get joinKey {
     if (!hasTeams) return '';
-    final names = <String>[teamA.toUpperCase(), teamB.toUpperCase()]..sort();
+    final names = <String>[canonicalTeam(teamA), canonicalTeam(teamB)]
+      ..sort();
     final d = date;
     final day = d == null
         ? ''

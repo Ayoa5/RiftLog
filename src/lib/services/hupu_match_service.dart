@@ -25,11 +25,6 @@ class HupuMatchService {
   /// 赛事结束后编号会继续增长，discover() 会在锚点失效时自动粗扫另找。
   static const int defaultSeed = 4516;
 
-  /// 连续多少次未命中就认为「这一段结束」
-  static const int _missStop = 3;
-
-  /// 单向最多探测多少个编号
-  static const int _maxProbe = 40;
 
   // ───────────────────────── 单场 ─────────────────────────
 
@@ -73,65 +68,83 @@ class HupuMatchService {
 
   // ───────────────────────── 赛程发现 ─────────────────────────
 
-  /// 发现「最近的一个连续比赛区块」
+  /// 发现虎扑里现有的比赛节点
+  ///
+  /// ⚠️ 编号不是「一路递增」，而是**分簇的**（实测 2026-10-27）：
+  ///   4501–4516 → 10-18 ~ 10-26 的比赛
+  ///   4601–4610 → 10-24 ~ 10-27 的比赛（新开一段）
+  ///   4517–4600 全空
+  /// 所以不能用「从锚点逐号 ±1，连续 3 次未命中就停」——那样永远到不了新簇。
   ///
   /// 策略：
-  ///   1. 锚点有效就直接用；无效则向上/向下按步长 8 粗扫（最多 10 轮）寻找可用锚点
-  ///   2. 从锚点向两侧逐号探测，连续 [_missStop] 次未命中即停
-  Future<List<LolMatch>> discover({
-    int seed = defaultSeed,
-    int maxProbe = _maxProbe,
-  }) async {
-    // 1) 找可用锚点
-    var anchor = seed;
-    var first = await fetchMatch(anchor);
-
-    if (first == null) {
-      for (var step = 1; step <= 10 && first == null; step++) {
-        for (final cand in <int>[seed + step * 8, seed - step * 8]) {
-          if (cand <= 0) continue;
-          final m = await fetchMatch(cand);
-          if (m != null) {
-            first = m;
-            anchor = cand;
-            break;
-          }
-        }
-      }
-      if (first == null) return const <LolMatch>[];
+  ///   · 首次：细网格（步长 10，seed-40~seed+400）+ 稀疏远扫（步长 50，+400~+2400）
+  ///           + 每个命中点向两侧 ±12 展开补齐整簇
+  ///   · 之后：用内存缓存做增量（从已知最大号向上探 40、向下补 10），刷新只需 1~2 秒
+  /// 全程 10 路并发。
+  Future<List<LolMatch>> discover({int seed = defaultSeed}) async {
+    if (_cache.isNotEmpty) {
+      await _refreshIncremental();
+      return _sortedCache();
     }
 
-    final found = <int, LolMatch>{anchor: first};
-
-    // 2) 向下
-    var miss = 0;
-    for (var i = 1; i <= maxProbe && miss < _missStop; i++) {
-      final id = anchor - i;
-      if (id <= 0) break;
-      final m = await fetchMatch(id);
-      if (m == null) {
-        miss++;
-      } else {
-        found[id] = m;
-        miss = 0;
-      }
+    // ── 首次全量 ──
+    final grid = <int>[];
+    for (var id = seed - 40; id <= seed + 400; id += 10) {
+      if (id > 0) grid.add(id);
+    }
+    for (final m in await _probeMany(grid)) {
+      _cache[m.bizId] = m;
     }
 
-    // 3) 向上
-    miss = 0;
-    for (var i = 1; i <= maxProbe && miss < _missStop; i++) {
-      final id = anchor + i;
-      final m = await fetchMatch(id);
-      if (m == null) {
-        miss++;
-      } else {
-        found[id] = m;
-        miss = 0;
-      }
+    // 远端稀疏扫描：防止编号跨越式增长（如 4501 → 4601 这种跳变）
+    final far = <int>[];
+    for (var id = seed + 400; id <= seed + 2400; id += 50) {
+      far.add(id);
+    }
+    for (final m in await _probeMany(far)) {
+      _cache[m.bizId] = m;
     }
 
-    // 4) 按比赛时间倒序（时间缺失时退化为 bizId 倒序）
-    final list = List<LolMatch>.from(found.values);
+    // 每个命中点向两侧展开，把整簇补齐
+    final anchors = List<int>.from(_cache.keys);
+    final expand = <int>{};
+    for (final a in anchors) {
+      for (var i = 1; i <= 12; i++) {
+        if (a - i > 0) expand.add(a - i);
+        expand.add(a + i);
+      }
+    }
+    expand.removeAll(_cache.keys);
+    for (final m in await _probeMany(expand.toList())) {
+      _cache[m.bizId] = m;
+    }
+
+    return _sortedCache();
+  }
+
+  // ── 缓存 ──
+  final Map<int, LolMatch> _cache = <int, LolMatch>{};
+
+  int get _cacheMax =>
+      _cache.isEmpty ? 0 : _cache.keys.reduce((a, b) => a > b ? a : b);
+
+  /// 增量刷新：从已知最大号往上探 40、往下补 10
+  Future<void> _refreshIncremental() async {
+    final top = _cacheMax;
+    final ids = <int>[];
+    for (var i = 1; i <= 40; i++) {
+      ids.add(top + i);
+    }
+    for (var i = 1; i <= 10; i++) {
+      if (top - i > 0) ids.add(top - i);
+    }
+    for (final m in await _probeMany(ids)) {
+      _cache[m.bizId] = m;
+    }
+  }
+
+  List<LolMatch> _sortedCache() {
+    final list = List<LolMatch>.from(_cache.values);
     list.sort((a, b) {
       final ta = a.matchTime;
       final tb = b.matchTime;
@@ -139,6 +152,21 @@ class HupuMatchService {
       return b.bizId.compareTo(a.bizId);
     });
     return list;
+  }
+
+  /// 并发探测一批编号（10 路）
+  Future<List<LolMatch>> _probeMany(List<int> ids) async {
+    final out = <LolMatch>[];
+    const batch = 10;
+    for (var i = 0; i < ids.length; i += batch) {
+      final end = (i + batch) > ids.length ? ids.length : i + batch;
+      final chunk = ids.sublist(i, end);
+      final results = await Future.wait(chunk.map(fetchMatch));
+      for (final m in results) {
+        if (m != null) out.add(m);
+      }
+    }
+    return out;
   }
 
   // ───────────────────────── 评论 ─────────────────────────

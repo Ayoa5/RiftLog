@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/providers.dart';
+import '../core/team_alias.dart';
 import '../core/theme.dart';
 import '../models/lpl_models.dart';
 import '../models/match_models.dart';
@@ -152,7 +153,7 @@ class SchedulePage extends ConsumerWidget {
 
   /// 虎扑比赛的匹配键：队名排序 + 日期
   static String _hupuKey(LolMatch m) {
-    final teams = <String>[m.homeTeam.toUpperCase(), m.awayTeam.toUpperCase()]
+    final teams = <String>[canonicalTeam(m.homeTeam), canonicalTeam(m.awayTeam)]
       ..removeWhere((e) => e.isEmpty)
       ..sort();
     if (teams.length < 2) return '';
