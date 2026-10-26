@@ -83,13 +83,33 @@ class CommentPage {
     required this.items,
     required this.total,
     required this.hasMore,
+    this.nextCursor,
   });
 
   final List<HupuComment> items;
   final int total;
   final bool hasMore;
 
+  /// 下一页游标（服务端的 cursor.publishTime）
+  final int? nextCursor;
+
   bool get isEmpty => items.isEmpty;
+}
+
+/// 评论排序方式 —— 对应虎扑评分页的三个 tab
+///
+/// 实测（2026-10-26）三者走的参数/接口完全不同：
+///   最亮 = GET primarySingleRow/hottest（返回数组，50 条，按亮数降序）
+///   最晚 = GET primarySingleRow?order=desc&publishTime=<当前ms>
+///   最早 = GET primarySingleRow?order=asc&publishTime=0
+enum CommentSort {
+  brightest('最亮'),
+  latest('最晚'),
+  earliest('最早');
+
+  const CommentSort(this.label);
+
+  final String label;
 }
 
 /// 评论查询参数（作为 Riverpod family 的 key，需要值相等语义）
@@ -97,22 +117,20 @@ class CommentQuery {
   const CommentQuery({
     required this.type,
     required this.no,
-    this.order = 'HOT',
+    this.sort = CommentSort.brightest,
   });
 
   final String type;
   final String no;
-
-  /// HOT=最亮；可换 NEW=最新
-  final String order;
+  final CommentSort sort;
 
   @override
   bool operator ==(Object other) =>
       other is CommentQuery &&
       other.type == type &&
       other.no == no &&
-      other.order == order;
+      other.sort == sort;
 
   @override
-  int get hashCode => Object.hash(type, no, order);
+  int get hashCode => Object.hash(type, no, sort);
 }

@@ -449,7 +449,13 @@ void _showComments(BuildContext context, ScoreItem item) {
   );
 }
 
-/// 评论区（实测评论挂在选手节点上，比赛/局级的 commentCount 为 0）
+/// 评论区
+///
+/// 实测（2026-10-26）虎扑三种排序走不同接口：
+///   最亮 → primarySingleRow/hottest（裸数组，约 50 条，按亮数降序）
+///   最晚 → primarySingleRow?order=desc&publishTime=<当前时间ms>
+///   最早 → primarySingleRow?order=asc&publishTime=0
+/// 翻页：把上一页的 cursor.publishTime 作为下一轮 publishTime 传回。
 class _CommentsSheet extends ConsumerStatefulWidget {
   const _CommentsSheet({required this.item});
 
@@ -460,108 +466,121 @@ class _CommentsSheet extends ConsumerStatefulWidget {
 }
 
 class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
-  /// HOT = 最亮，NEW = 最新
-  String _order = 'HOT';
+  CommentSort _sort = CommentSort.brightest;
+
+  final List<HupuComment> _items = <HupuComment>[];
+  int? _cursor;
+  bool _hasMore = false;
+  bool _loading = false;
+  String? _error;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(reset: true);
+  }
+
+  Future<void> _load({bool reset = false}) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      if (reset) {
+        _items.clear();
+        _cursor = null;
+        _hasMore = false;
+        _total = 0;
+      }
+    });
+
+    try {
+      final page = await ref.read(matchServiceProvider).fetchComments(
+            type: 'lol_item',
+            no: widget.item.bizId.toString(),
+            sort: _sort,
+            cursor: _cursor,
+          );
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page.items);
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        if (reset) _total = page.total;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _changeSort(CommentSort s) {
+    if (s == _sort) return;
+    setState(() => _sort = s);
+    _load(reset: true);
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final query = CommentQuery(
-      type: 'lol_item',
-      no: widget.item.bizId.toString(),
-      order: _order,
-    );
-    final async = ref.watch(commentsProvider(query));
 
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.75,
+      initialChildSize: 0.78,
       maxChildSize: 0.95,
       builder: (ctx, controller) => ListView(
         controller: controller,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: <Widget>[
+          // 标题
           Row(
             children: <Widget>[
               Expanded(
                 child: Text(
                   '${widget.item.name} 的评论',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              SegmentedButton<String>(
-                segments: const <ButtonSegment<String>>[
-                  ButtonSegment<String>(value: 'HOT', label: Text('最亮')),
-                  ButtonSegment<String>(value: 'NEW', label: Text('最新')),
-                ],
-                selected: <String>{_order},
-                onSelectionChanged: (s) =>
-                    setState(() => _order = s.first),
-                showSelectedIcon: false,
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  textStyle: WidgetStatePropertyAll<TextStyle?>(
-                    Theme.of(ctx).textTheme.labelSmall,
-                  ),
+              if (_total > 0)
+                Text(
+                  '共 $_total 条',
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                 ),
-              ),
             ],
           ),
-          const SizedBox(height: 4),
-          async.when(
-            data: (page) {
-              if (page.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      '还没有评论',
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
+          const SizedBox(height: 8),
+
+          // 排序：最亮 / 最晚 / 最早
+          Row(
+            children: <Widget>[
+              for (final s in CommentSort.values)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(s.label),
+                    selected: _sort == s,
+                    onSelected: (_) => _changeSort(s),
+                    visualDensity: VisualDensity.compact,
                   ),
-                );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '共 ${page.total} 条',
-                    style: Theme.of(ctx)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final c in page.items) _CommentTile(comment: c),
-                  if (page.hasMore)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Center(
-                        child: Text(
-                          '仅显示前 ${page.items.length} 条',
-                          style: Theme.of(ctx)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (e, _) => Padding(
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          if (_error != null)
+            Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
-                  '评论加载失败\n$e',
+                  '评论加载失败\n$_error',
                   textAlign: TextAlign.center,
                   style: Theme.of(ctx)
                       .textTheme
@@ -570,7 +589,43 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 ),
               ),
             ),
-          ),
+
+          if (_items.isEmpty && _loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+
+          if (_items.isEmpty && !_loading && _error == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(
+                  '还没有评论',
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ),
+            ),
+
+          for (final c in _items) _CommentTile(comment: c),
+
+          // 加载更多
+          if (_hasMore)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Center(
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: () => _load(),
+                        child: const Text('加载更多'),
+                      ),
+              ),
+            ),
         ],
       ),
     );
@@ -596,7 +651,6 @@ class _CommentTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              // 头像
               ClipOval(
                 child: SizedBox(
                   width: 32,

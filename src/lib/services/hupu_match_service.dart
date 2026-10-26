@@ -143,27 +143,42 @@ class HupuMatchService {
 
   // ───────────────────────── 评论 ─────────────────────────
 
-  /// 拉取某个评分对象的评论（实测只有 lol_item 有数据）
+  /// 拉取某个评分对象的评论
   ///
-  /// [type] 例：lol_item；[no] 选手 bizId
-  /// [order] HOT=最亮 / NEW=最新（服务端接受任意字符串，按需扩展）
+  /// 实测（2026-10-26）：三种排序走不同接口/参数
+  ///   最亮 → GET bpl/comment/list/primarySingleRow/hottest（data 是数组，约 50 条）
+  ///   最晚 → GET bpl/comment/list/primarySingleRow?order=desc&publishTime=<最近一页的 cursor>
+  ///   最早 → GET bpl/comment/list/primarySingleRow?order=asc&publishTime=<上一页 cursor>
+  ///
+  /// 注意：之前用的 `bpl/comment/list` 是另一个接口，固定返回 10 条且忽略排序，
+  /// 不要再用。
   Future<CommentPage> fetchComments({
     required String type,
     required String no,
-    String order = 'HOT',
-    int page = 1,
-    int pageSize = 20,
+    CommentSort sort = CommentSort.brightest,
+    int? cursor,
+    int pageSize = 10,
   }) async {
     try {
+      if (sort == CommentSort.brightest) {
+        return _fetchBrightest(type, no);
+      }
+
+      // latest：首屏用「当前时间」作为游标；earliest：用 0
+      final publishTime = cursor ??
+          (sort == CommentSort.latest
+              ? DateTime.now().millisecondsSinceEpoch
+              : 0);
+
       final json = await _client.getJson(
-        '$apiBase/bpl/comment/list',
+        '$apiBase/bpl/comment/list/primarySingleRow',
         query: {
+          'publishTime': publishTime,
+          'order': sort == CommentSort.latest ? 'desc' : 'asc',
           'outBizType': type,
           'outBizNo': no,
-          'publishTime': 0,
-          'order': order,
-          'page': page,
-          'pageSize': pageSize,
+          'clientCode': '',
+          'cid': '',
         },
         okCodes: const <int>{1},
       );
@@ -175,21 +190,16 @@ class HupuMatchService {
           hasMore: false,
         );
       }
-      final list = data['comments'];
-      final items = <HupuComment>[];
-      if (list is List) {
-        for (final e in list) {
-          if (e is Map<String, dynamic>) {
-            final c = HupuComment.fromJson(e);
-            if (c.content.isNotEmpty) items.add(c);
-          }
-        }
-      }
+      final items = _parseCommentList(data['comments']);
+      final cur = (data['cursor'] as Map?)?.cast<String, dynamic>();
+      final next = cur?['publishTime'];
       final total = data['commentCount'];
+
       return CommentPage(
         items: items,
         total: total is num ? total.toInt() : items.length,
-        hasMore: data['hasMore'] == true,
+        hasMore: data['hasMore'] == true && items.isNotEmpty,
+        nextCursor: next is num ? next.toInt() : null,
       );
     } catch (_) {
       return const CommentPage(
@@ -198,6 +208,39 @@ class HupuMatchService {
         hasMore: false,
       );
     }
+  }
+
+  /// 最亮：独立接口，返回裸数组（约 50 条，按亮数降序）
+  Future<CommentPage> _fetchBrightest(String type, String no) async {
+    final json = await _client.getJson(
+      '$apiBase/bpl/comment/list/primarySingleRow/hottest',
+      query: {
+        'outBizType': type,
+        'outBizNo': no,
+        'clientCode': '',
+        'cid': '',
+      },
+      okCodes: const <int>{1},
+    );
+    final items = _parseCommentList(json['data']);
+    return CommentPage(
+      items: items,
+      total: items.length,
+      hasMore: false,
+      nextCursor: null,
+    );
+  }
+
+  List<HupuComment> _parseCommentList(dynamic raw) {
+    if (raw is! List) return const <HupuComment>[];
+    final out = <HupuComment>[];
+    for (final e in raw) {
+      if (e is Map<String, dynamic>) {
+        final c = HupuComment.fromJson(e);
+        if (c.content.isNotEmpty) out.add(c);
+      }
+    }
+    return out;
   }
 
   // ───────────────────────── 内部 ─────────────────────────

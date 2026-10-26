@@ -3,7 +3,6 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/comment_models.dart';
 import '../models/hupu_models.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
@@ -47,12 +46,3 @@ final gameScoresProvider =
   (ref, gameId) => ref.watch(matchServiceProvider).fetchGameScores(gameId),
 );
 
-/// 某个评分对象的评论（实测只有选手节点 lol_item 有数据）
-final commentsProvider =
-    FutureProvider.autoDispose.family<CommentPage, CommentQuery>(
-  (ref, q) => ref.watch(matchServiceProvider).fetchComments(
-        type: q.type,
-        no: q.no,
-        order: q.order,
-      ),
-);
