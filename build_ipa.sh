@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# 本地一键生成无签名 .ipa（在 macOS 上运行）
+#
+# 用法：
+#   chmod +x build_ipa.sh
+#   ./build_ipa.sh
+#
+# 产物：out/HupuLOL_Unsigned.ipa
+# 安装：Sideloadly / AltStore / TrollStore（未签名包需自行签名）
+
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$PROJECT_ROOT/src"
+OUT_DIR="$PROJECT_ROOT/out"
+IPA_NAME="HupuLOL_Unsigned.ipa"
+
+info() { printf "\033[1;36m▶ %s\033[0m\n" "$1"; }
+ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$1"; }
+die()  { printf "\033[1;31m✗ %s\033[0m\n" "$1" >&2; exit 1; }
+
+# ── 环境检查 ───────────────────────────────────────────────
+command -v flutter >/dev/null 2>&1 || die "未找到 flutter，请先安装 Flutter SDK 并加入 PATH"
+command -v xcodebuild >/dev/null 2>&1 || die "未找到 xcodebuild，请安装 Xcode（且已执行 xcode-select --install）"
+
+if ! xcodebuild -version >/dev/null 2>&1; then
+  die "Xcode 未就绪：请打开 Xcode 完成首次初始化并同意许可协议（sudo xcodebuild -license accept）"
+fi
+
+if ! command -v pod >/dev/null 2>&1; then
+  echo "⚠ 未找到 CocoaPods，尝试继续（若 pod install 失败请先安装：sudo gem install cocoapods）"
+fi
+
+info "Flutter 版本"
+flutter --version | head -3
+
+cd "$SRC_DIR"
+
+# ── iOS 工程 ───────────────────────────────────────────────
+if [ ! -d "ios" ]; then
+  info "ios/ 不存在，用 flutter create 生成 iOS 工程"
+  flutter create --platforms=ios --org com.hupulol .
+else
+  ok "ios/ 已存在"
+fi
+
+info "拉取依赖"
+flutter pub get
+
+if [ -d "ios" ] && command -v pod >/dev/null 2>&1; then
+  info "pod install"
+  (cd ios && pod install --repo-update)
+fi
+
+# ── 构建 ───────────────────────────────────────────────────
+info "构建 iOS release（无签名）"
+flutter build ios --release --no-codesign
+
+APP_PATH="build/ios/iphoneos/Runner.app"
+[ -d "$APP_PATH" ] || die "构建产物不存在：$APP_PATH"
+
+# ── 打包 ───────────────────────────────────────────────────
+info "打包为未签名 .ipa"
+rm -rf build/ipa_stage
+mkdir -p build/ipa_stage/Payload
+cp -R "$APP_PATH" build/ipa_stage/Payload/
+# 无签名包不应带 _CodeSignature
+rm -rf "build/ipa_stage/Payload/Runner.app/_CodeSignature"
+
+(cd build/ipa_stage && zip -qry "$IPA_NAME" Payload)
+
+mkdir -p "$OUT_DIR"
+cp "build/ipa_stage/$IPA_NAME" "$OUT_DIR/$IPA_NAME"
+
+echo
+ok "完成：$OUT_DIR/$IPA_NAME"
+ls -lh "$OUT_DIR/$IPA_NAME"
+echo
+echo "SHA256:"
+shasum -a 256 "$OUT_DIR/$IPA_NAME"
+echo
+echo "下一步："
+echo "  1) 用 Sideloadly 拖入该 ipa，填 Apple ID 签名后安装"
+echo "  2) 或 AltStore：My Apps → + → 选择该 ipa"
+echo "  3) TrollStore（仅支持的 iOS 版本）：直接打开 ipa 安装，无需签名"
+echo
+echo "提示：若安装后闪退，多为签名证书问题，与 ipa 本身无关。"

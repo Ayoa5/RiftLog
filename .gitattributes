@@ -1,0 +1,14 @@
+# 统一换行符：避免 Windows 检出时把 .sh 变成 CRLF（会导致 macOS 上 bad interpreter）
+* text=auto eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.dart text eol=lf
+*.md text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制
+*.ipa binary
+*.png binary
+*.jpg binary

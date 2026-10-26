@@ -1,0 +1,12 @@
+# 仓库根忽略规则（Flutter 细项在 src/.gitignore）
+out/
+*.ipa
+
+# 探针落盘
+tools/_probe/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

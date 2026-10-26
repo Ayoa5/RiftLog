@@ -1,0 +1,121 @@
+name: Build Unsigned IPA
+
+# 手动触发（推荐）：Actions → Build Unsigned IPA → Run workflow
+# 或推送 tag：git tag v1.0.0 && git push --tags
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: 'Flutter 版本（留空用 stable 最新）'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build unsigned .ipa
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          echo "=== Xcode ==="
+          xcodebuild -version
+          echo "=== CocoaPods ==="
+          pod --version || true
+          echo "=== 目录 ==="
+          ls -la
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ github.event.inputs.flutter_version || '' }}
+          cache: true
+
+      - name: Flutter 版本
+        run: flutter --version
+
+      # 仓库里只提交了 lib/ 与 pubspec，iOS 原生工程由 flutter create 生成
+      - name: 生成 iOS 工程（若缺失）
+        working-directory: src
+        run: |
+          if [ ! -d "ios" ]; then
+            echo "ios/ 不存在，执行 flutter create 生成"
+            flutter create --platforms=ios --org com.hupulol .
+          else
+            echo "ios/ 已存在，跳过"
+          fi
+
+      - name: 安装依赖
+        working-directory: src
+        run: |
+          flutter pub get
+          (cd ios && pod install --repo-update)
+
+      # 静态检查不阻断打包：代码在 CI 之外修改，analyze 失败也要能出包看效果
+      - name: 静态分析（不阻断）
+        working-directory: src
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: 构建 iOS（无签名）
+        working-directory: src
+        run: |
+          flutter build ios --release --no-codesign
+          echo "=== 产物 ==="
+          ls -la build/ios/iphoneos/ | head -20
+
+      - name: 打包为 unsigned .ipa
+        working-directory: src
+        run: |
+          set -e
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::未找到 $APP_PATH"
+            exit 1
+          fi
+
+          rm -rf build/ipa_stage
+          mkdir -p build/ipa_stage/Payload
+          cp -R "$APP_PATH" build/ipa_stage/Payload/
+
+          # 无签名包：不要把 _CodeSignature 带进去（部分安装器会因此报错）
+          rm -rf build/ipa_stage/Payload/Runner.app/_CodeSignature
+
+          cd build/ipa_stage
+          zip -qry HupuLOL_Unsigned.ipa Payload
+
+          echo "=== 产物 ==="
+          ls -lh HupuLOL_Unsigned.ipa
+          echo "SHA256:"
+          shasum -a 256 HupuLOL_Unsigned.ipa
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HupuLOL_Unsigned
+          path: src/build/ipa_stage/HupuLOL_Unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 摘要
+        run: |
+          {
+            echo "## 打包完成"
+            echo ""
+            echo "- 产物：\`HupuLOL_Unsigned.ipa\`（未签名）"
+            echo "- 下载：本页面底部 **Artifacts → HupuLOL_Unsigned**"
+            echo "- 安装：Sideloadly / AltStore / TrollStore"
+            echo ""
+            echo "> 未签名包需要自行签名后才能装到非越狱设备。"
+          } >> "$GITHUB_STEP_SUMMARY"
