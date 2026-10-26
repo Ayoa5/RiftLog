@@ -1,12 +1,19 @@
-// 赛程页：真实比赛列表（虎扑 lol_match 节点）
-// 点卡片 → 比赛详情（BO 局切换 + 选手评分）
+// 赛程页
+//
+// 数据来源分两路，各自负责它擅长的部分：
+//   · 预告（未开赛）→ LPL 官网静态赛程（含未来对阵/时间/赛制）
+//     虎扑没有未开赛的比赛节点，实测 4516 之后全空，所以预告只能走 LPL。
+//   · 战报（已结束）→ LPL 赛程里列全，再按「队伍+日期」匹配虎扑比赛节点，
+//     匹配到的可点进详情看选手评分；匹配不到显示「暂无评分」。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/providers.dart';
 import '../core/theme.dart';
+import '../models/lpl_models.dart';
 import '../models/match_models.dart';
+import '../services/lpl_service.dart';
 import 'match_detail_page.dart';
 
 class SchedulePage extends ConsumerWidget {
@@ -14,20 +21,29 @@ class SchedulePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(scheduleProvider);
+    final lplAsync = ref.watch(lplScheduleProvider);
+    // 虎扑比赛：用于给「已结束」行挂上评分入口（拿不到也不影响展示）
+    final hupuMatches = ref.watch(scheduleProvider).valueOrNull ??
+        const <LolMatch>[];
     final cs = Theme.of(context).colorScheme;
+
+    final hupuIndex = <String, LolMatch>{};
+    for (final m in hupuMatches) {
+      final k = _hupuKey(m);
+      if (k.isNotEmpty) hupuIndex[k] = m;
+    }
 
     return RefreshIndicator(
       onRefresh: () async {
+        ref.invalidate(lplScheduleProvider);
         ref.invalidate(scheduleProvider);
-        await ref.read(scheduleProvider.future);
       },
       child: CustomScrollView(
         slivers: <Widget>[
           const SliverAppBar.large(title: Text('赛程')),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
               child: Row(
                 children: <Widget>[
                   Icon(Icons.sports_esports_outlined,
@@ -35,10 +51,10 @@ class SchedulePage extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '虎扑 · 英雄联盟赛事（实时）',
+                      '英雄联盟赛事 · 预告来自官方赛程，战报评分来自虎扑',
                       style: Theme.of(context)
                           .textTheme
-                          .bodyMedium
+                          .bodySmall
                           ?.copyWith(color: cs.onSurfaceVariant),
                     ),
                   ),
@@ -46,57 +62,65 @@ class SchedulePage extends ConsumerWidget {
               ),
             ),
           ),
-          ...async.when<List<Widget>>(
-            data: (matches) {
-              if (matches.isEmpty) {
+          ...lplAsync.when<List<Widget>>(
+            data: (all) {
+              if (all.isEmpty) {
                 return <Widget>[
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: _Hint(
                       icon: Icons.event_busy_outlined,
-                      text: '暂时没有找到比赛\n下拉刷新试试',
+                      text: '没有拿到赛程\n下拉刷新试试',
                       action: FilledButton.tonalIcon(
-                        onPressed: () => ref.invalidate(scheduleProvider),
+                        onPressed: () => ref.invalidate(lplScheduleProvider),
                         icon: const Icon(Icons.refresh),
-                        label: const Text('重新探测'),
+                        label: const Text('重新加载'),
                       ),
                     ),
                   ),
                 ];
               }
 
-              // 按日期分组（discover 已按时间倒序）
-              final groups = <String, List<LolMatch>>{};
-              for (final m in matches) {
-                groups.putIfAbsent(m.dateLabel, () => <LolMatch>[]).add(m);
-              }
-
+              final upcoming = LplScheduleService.upcoming(all);
+              final finished = LplScheduleService.finished(all);
               final slivers = <Widget>[];
-              groups.forEach((label, list) {
+
+              if (upcoming.isNotEmpty) {
+                slivers.add(_sectionHeader(context, '即将开始', '${upcoming.length} 场'));
                 slivers.add(
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
-                      child: Text(
-                        label,
-                        style:
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: cs.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                      ),
+                  SliverList.builder(
+                    itemCount: upcoming.length,
+                    itemBuilder: (ctx, i) => _UpcomingRow(
+                      match: upcoming[i],
+                      showDate: i == 0 ||
+                          upcoming[i].dateLabel != upcoming[i - 1].dateLabel,
                     ),
                   ),
                 );
+              }
+
+              if (finished.isNotEmpty) {
+                slivers.add(_sectionHeader(context, '已结束', '${finished.length} 场'));
                 slivers.add(
                   SliverList.builder(
-                    itemCount: list.length,
-                    itemBuilder: (ctx, i) => _MatchCard(match: list[i]),
+                    itemCount: finished.length,
+                    itemBuilder: (ctx, i) {
+                      final m = finished[i];
+                      final hupu = hupuIndex[m.joinKey];
+                      return _FinishedRow(
+                        match: m,
+                        hupuMatch: hupu,
+                        showDate: i == 0 ||
+                            finished[i].dateLabel !=
+                                finished[i - 1].dateLabel,
+                      );
+                    },
                   ),
                 );
-              });
+              }
+
               slivers.add(
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
               );
               return slivers;
             },
@@ -111,9 +135,9 @@ class SchedulePage extends ConsumerWidget {
                 hasScrollBody: false,
                 child: _Hint(
                   icon: Icons.cloud_off_outlined,
-                  text: '加载失败\n$e',
+                  text: '赛程加载失败\n$e',
                   action: FilledButton.tonalIcon(
-                    onPressed: () => ref.invalidate(scheduleProvider),
+                    onPressed: () => ref.invalidate(lplScheduleProvider),
                     icon: const Icon(Icons.refresh),
                     label: const Text('重试'),
                   ),
@@ -125,106 +149,128 @@ class SchedulePage extends ConsumerWidget {
       ),
     );
   }
+
+
+  /// 虎扑比赛的匹配键：队名排序 + 日期
+  static String _hupuKey(LolMatch m) {
+    final teams = <String>[m.homeTeam.toUpperCase(), m.awayTeam.toUpperCase()]
+      ..removeWhere((e) => e.isEmpty)
+      ..sort();
+    if (teams.length < 2) return '';
+    final t = m.matchTime;
+    if (t == null) return '';
+    final day = '${t.year}-${t.month.toString().padLeft(2, '0')}-'
+        '${t.day.toString().padLeft(2, '0')}';
+    return '${teams.join('|')}@$day';
+  }
+
+  static Widget _sectionHeader(
+    BuildContext context,
+    String title,
+    String trailing,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 16, 6),
+        child: Row(
+          children: <Widget>[
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              trailing,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _MatchCard extends StatelessWidget {
-  const _MatchCard({required this.match});
+/// 未开赛：显示日期/时间、阶段、对阵、赛制
+class _UpcomingRow extends StatelessWidget {
+  const _UpcomingRow({required this.match, required this.showDate});
 
-  final LolMatch match;
+  final LplMatch match;
+  final bool showDate;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final t = match.matchTime;
-    final timeText = t == null
-        ? ''
-        : '${t.hour.toString().padLeft(2, '0')}:'
-            '${t.minute.toString().padLeft(2, '0')}';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Card.filled(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Card.outlined(
         margin: EdgeInsets.zero,
         shape: AppTheme.cardShape(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => MatchDetailPage(match: match),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: Column(
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cs.secondaryContainer,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        <String>[
-                          if (match.competition.isNotEmpty) match.competition,
-                          if (match.stage.isNotEmpty) match.stage,
-                        ].join(' · '),
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(color: cs.onSecondaryContainer),
-                      ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Text(
+                    <String>[
+                      if (showDate) match.dateLabel,
+                      if (match.timeLabel.isNotEmpty) match.timeLabel,
+                    ].join('  '),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: cs.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    const Spacer(),
-                    Text(
+                    child: Text(
                       <String>[
-                        match.statusText,
-                        if (timeText.isNotEmpty) timeText,
-                      ].join('  '),
+                        if (match.bo.isNotEmpty) match.bo,
+                        if (match.stage.isNotEmpty) match.stage,
+                      ].join(' · '),
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
                           ?.copyWith(color: cs.onSurfaceVariant),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _Team(
-                        name: match.homeTeam,
-                        logo: match.homeLogo,
-                        alignEnd: false,
-                        winner: match.winnerName == match.homeTeam,
-                      ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                match.hasTeams
+                    ? '${match.teamA}  vs  ${match.teamB}'
+                    : (match.name.isEmpty ? '对阵待定' : match.name),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        '${match.homeScore} : ${match.awayScore}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Expanded(
-                      child: _Team(
-                        name: match.awayTeam,
-                        logo: match.awayLogo,
-                        alignEnd: true,
-                        winner: match.winnerName == match.awayTeam,
-                      ),
-                    ),
-                  ],
+              ),
+              if (match.round.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 2),
+                Text(
+                  match.round,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
-            ),
+            ],
           ),
         ),
       ),
@@ -232,68 +278,133 @@ class _MatchCard extends StatelessWidget {
   }
 }
 
-class _Team extends StatelessWidget {
-  const _Team({
-    required this.name,
-    required this.logo,
-    required this.alignEnd,
-    required this.winner,
+/// 已结束：比分 + 评分入口（匹配不到虎扑比赛时灰掉）
+class _FinishedRow extends StatelessWidget {
+  const _FinishedRow({
+    required this.match,
+    required this.hupuMatch,
+    required this.showDate,
   });
 
-  final String name;
-  final String logo;
-  final bool alignEnd;
-  final bool winner;
+  final LplMatch match;
+  final LolMatch? hupuMatch;
+  final bool showDate;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final hasRating = hupuMatch != null;
 
-    final label = Flexible(
-      child: Text(
-        name.isEmpty ? '待定' : name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: winner ? FontWeight.w700 : FontWeight.w500,
-              color: winner ? cs.primary : cs.onSurface,
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Text(
+                <String>[
+                  if (showDate) match.dateLabel,
+                  if (match.timeLabel.isNotEmpty) match.timeLabel,
+                ].join('  '),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const Spacer(),
+              if (hasRating)
+                Row(
+                  children: <Widget>[
+                    Icon(Icons.star_rounded, size: 13, color: cs.primary),
+                    const SizedBox(width: 2),
+                    Text(
+                      '评分',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: cs.primary),
+                    ),
+                  ],
+                )
+              else
+                Text(
+                  '暂无评分',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: cs.outline),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  match.teamA.isEmpty ? '待定' : match.teamA,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  '${match.scoreA} : ${match.scoreB}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  match.teamB.isEmpty ? '待定' : match.teamB,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          if (match.stage.isNotEmpty || match.round.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 3),
+            Text(
+              <String>[
+                if (match.stage.isNotEmpty) match.stage,
+                if (match.round.isNotEmpty) match.round,
+                if (match.bo.isNotEmpty) match.bo,
+              ].join(' · '),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
             ),
+          ],
+        ],
       ),
     );
-    final avatar = _Logo(url: logo);
 
-    return Row(
-      mainAxisAlignment:
-          alignEnd ? MainAxisAlignment.end : MainAxisAlignment.start,
-      children: alignEnd
-          ? <Widget>[label, const SizedBox(width: 8), avatar]
-          : <Widget>[avatar, const SizedBox(width: 8), label],
-    );
-  }
-}
-
-class _Logo extends StatelessWidget {
-  const _Logo({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 28,
-        height: 28,
-        child: url.isEmpty
-            ? Container(color: cs.surfaceContainerHighest)
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    Container(color: cs.surfaceContainerHighest),
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Card.filled(
+        margin: EdgeInsets.zero,
+        shape: AppTheme.cardShape(),
+        clipBehavior: Clip.antiAlias,
+        child: hasRating
+            ? InkWell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MatchDetailPage(match: hupuMatch!),
+                  ),
+                ),
+                child: content,
+              )
+            : content,
       ),
     );
   }

@@ -31,6 +31,8 @@
 | 4 | **选手评分** | `GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/score_tree/getCurAndSubNodeByBizKey` |
 | 5 | 单场比赛信息 | 同域 `/bpl/score_tree/getSelfByBizKey?outBizType=lol_match&outBizNo={id}` |
 | 6 | 局的选手评分 | 同域 `getCurAndSubNodeByBizKey?relation=CHILD&outBizType=lol_bo&outBizNo={id}` |
+| 7 | **未开赛赛程** | `GET https://lpl.qq.com/web201612/data/LOL_MATCH2_MATCH_HOMEPAGE_BMATCH_LIST_246.js`（静态 JSON） |
+| 8 | 选手评论 | 同域 `/bpl/comment/list/primarySingleRow`（最晚/最早）与 `.../hottest`（最亮） |
 
 实测样例（局 `lol_bo:7717`，iG vs HLE）：
 
@@ -48,9 +50,15 @@ Gumayusi 2.4 · Zeus 7.6 · Kanavi 4.0 · Delight 3.0 · Zeka 2.8 · 教练 Homm
 （实测 4501–4516 连成一片），所以 App 用「锚点 + 向两侧逐号探测，连续 3 次未命中即停」来发现比赛，
 结果按 `matchTime` 倒序、按日期分组展示。
 
-**仍存在的局限**：赛事之间有较大空档（3400 是 LCK、2800 是电竞世界杯、2000 以下全空），
-跨赛事时锚点可能失效；当前用步长 8 粗扫兜底。要更稳可后续把 maxId 持久化。
-详见 `docs/虎扑接口实测记录_20261026.md` 第五、六节。
+**未开赛预告走 LPL 官方**：虎扑只有「已开赛/已结束」的比赛节点，
+赛前预告取自腾讯 LPL 官网的**静态 JSON**（无需签名）：
+
+
+
+gameId=246 是 2026 全球总决赛，46 场（26 已结束 + 20 未开始，含 10-27 起的对阵）。
+App 里「即将开始」用 LPL 数据，「已结束」用 LPL 列表 + 按「队名+日期」匹配虎扑节点挂评分入口。
+
+详见 `docs/虎扑接口实测记录_20261026.md` 第五、六、七、九节。
 
 ---
 
