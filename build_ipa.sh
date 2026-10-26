@@ -48,13 +48,16 @@ info "拉取依赖"
 flutter pub get
 
 # ── 构建 ───────────────────────────────────────────────────
-# 注意：flutter create 不生成 Podfile；--config-only 会生成 Podfile 并跑 pod install
+# 注意：flutter create 不生成 Podfile；--config-only 会生成 Podfile 并跑 pod install。
+# 必须同时带 --no-codesign，否则 config-only 也会先做证书检查并失败。
 info "生成构建配置（config-only）"
-flutter build ios --release --config-only
+flutter build ios --release --config-only --no-codesign
 
 if [ -f "ios/Podfile" ] && command -v pod >/dev/null 2>&1; then
   info "pod install"
   (cd ios && pod install --repo-update)
+else
+  ok "无 Podfile（可能没有原生插件），将用 Runner.xcodeproj 构建"
 fi
 
 # 直接 xcodebuild + 显式关闭签名。
@@ -68,8 +71,14 @@ info "Xcode 无签名构建"
       echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
     fi
   done
-  xcodebuild \
-    -workspace Runner.xcworkspace \
+  if [ -d Runner.xcworkspace ]; then
+    ENTRY="-workspace Runner.xcworkspace"
+  else
+    ENTRY="-project Runner.xcodeproj"
+  fi
+  echo "构建入口: $ENTRY"
+  # shellcheck disable=SC2086
+  xcodebuild $ENTRY \
     -scheme Runner \
     -configuration Release \
     -sdk iphoneos \

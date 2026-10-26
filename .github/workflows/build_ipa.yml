@@ -75,15 +75,24 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       # 先用 config-only 生成 ios/Podfile、Flutter 资产与 xcconfig（不产出 app）
+      # 必须带 --no-codesign：否则 config-only 也会先做证书检查并直接失败
       - name: 生成构建配置（含 Podfile / pod install）
         working-directory: src
         run: |
-          flutter build ios --release --config-only
+          flutter build ios --release --config-only --no-codesign
           echo "=== ios/ 内容 ==="
           ls -la ios/ || true
           if [ -f ios/Podfile ]; then
             echo "Podfile 已生成，执行 pod install"
             (cd ios && pod install --repo-update)
+          else
+            echo "无 Podfile（可能没有原生插件），直接用 Runner.xcodeproj 构建"
+          fi
+          echo "=== 构建入口 ==="
+          if [ -d ios/Runner.xcworkspace ]; then
+            echo "WORKSPACE=1"
+          else
+            echo "WORKSPACE=0"
           fi
 
       # 直接用 xcodebuild 并显式关闭签名：
@@ -100,8 +109,14 @@ jobs:
               echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
             fi
           done
-          xcodebuild \
-            -workspace Runner.xcworkspace \
+          # 有 Pods 用 workspace，没有就用 project
+          if [ -d Runner.xcworkspace ]; then
+            ENTRY="-workspace Runner.xcworkspace"
+          else
+            ENTRY="-project Runner.xcodeproj"
+          fi
+          echo "构建入口: $ENTRY"
+          xcodebuild $ENTRY \
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
