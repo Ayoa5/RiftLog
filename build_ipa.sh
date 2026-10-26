@@ -47,9 +47,11 @@ fi
 info "拉取依赖"
 flutter pub get
 
-if [ -d "ios" ] && command -v pod >/dev/null 2>&1; then
+if [ -f "ios/Podfile" ] && command -v pod >/dev/null 2>&1; then
   info "pod install"
   (cd ios && pod install --repo-update)
+else
+  ok "ios/Podfile 尚未生成 —— 由 flutter build ios 自动创建并 pod install"
 fi
 
 # ── 构建 ───────────────────────────────────────────────────

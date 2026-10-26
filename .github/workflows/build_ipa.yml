@@ -55,12 +55,22 @@ jobs:
           else
             echo "ios/ 已存在，跳过"
           fi
+          echo "=== ios/ 内容 ==="
+          ls -la ios/ || true
 
+      # 注意：ios/Podfile 由 flutter build ios 在需要时自动创建，
+      # 因此这里只在 Podfile 已存在时才执行 pod install，避免
+      # "No Podfile found in the project directory" 直接中断。
       - name: 安装依赖
         working-directory: src
         run: |
           flutter pub get
-          (cd ios && pod install --repo-update)
+          if [ -f ios/Podfile ]; then
+            echo "发现 ios/Podfile，执行 pod install"
+            (cd ios && pod install --repo-update)
+          else
+            echo "ios/Podfile 尚未生成 —— 交给 flutter build ios 自动创建并 pod install"
+          fi
 
       # 静态检查不阻断打包：代码在 CI 之外修改，analyze 失败也要能出包看效果
       - name: 静态分析（不阻断）
