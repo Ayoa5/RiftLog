@@ -58,19 +58,10 @@ jobs:
           echo "=== ios/ 内容 ==="
           ls -la ios/ || true
 
-      # 注意：ios/Podfile 由 flutter build ios 在需要时自动创建，
-      # 因此这里只在 Podfile 已存在时才执行 pod install，避免
-      # "No Podfile found in the project directory" 直接中断。
+      # Podfile 由下一步的 flutter build ios --config-only 生成，这里只管依赖
       - name: 安装依赖
         working-directory: src
-        run: |
-          flutter pub get
-          if [ -f ios/Podfile ]; then
-            echo "发现 ios/Podfile，执行 pod install"
-            (cd ios && pod install --repo-update)
-          else
-            echo "ios/Podfile 尚未生成 —— 交给 flutter build ios 自动创建并 pod install"
-          fi
+        run: flutter pub get
 
       # 静态检查不阻断打包：代码在 CI 之外修改，analyze 失败也要能出包看效果
       - name: 静态分析（不阻断）
@@ -78,20 +69,55 @@ jobs:
         continue-on-error: true
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: 构建 iOS（无签名）
+      # 先用 config-only 生成 ios/Podfile、Flutter 资产与 xcconfig（不产出 app）
+      - name: 生成构建配置（含 Podfile / pod install）
         working-directory: src
         run: |
-          flutter build ios --release --no-codesign
-          echo "=== 产物 ==="
-          ls -la build/ios/iphoneos/ | head -20
+          flutter build ios --release --config-only
+          echo "=== ios/ 内容 ==="
+          ls -la ios/ || true
+          if [ -f ios/Podfile ]; then
+            echo "Podfile 已生成，执行 pod install"
+            (cd ios && pod install --repo-update)
+          fi
+
+      # 直接用 xcodebuild 并显式关闭签名：
+      # flutter build ios --no-codesign 在「CI 里 flutter create 出来的工程」上仍会被
+      # Xcode 15+ 的 Development Team 校验拦住（DEVELOPMENT_TEAM 为空）。
+      - name: Xcode 无签名构建
+        working-directory: src
+        run: |
+          set -o pipefail
+          cd ios
+          # 双保险：xcconfig 里也关掉签名
+          for f in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
+            if [ -f "$f" ] && ! grep -q CODE_SIGNING_ALLOWED "$f"; then
+              echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
+            fi
+          done
+          xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build/ios_dd \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build 2>&1 | tee /tmp/xcodebuild.log | tail -60
+          echo "=== 产物检查 ==="
+          ls -la ../build/ios_dd/Build/Products/Release-iphoneos/ || true
 
       - name: 打包为 unsigned .ipa
         working-directory: src
         run: |
           set -e
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          APP_PATH="build/ios_dd/Build/Products/Release-iphoneos/Runner.app"
           if [ ! -d "$APP_PATH" ]; then
-            echo "::error::未找到 $APP_PATH"
+            echo "::error::未找到 $APP_PATH，下面是 xcodebuild 日志尾部"
+            tail -80 /tmp/xcodebuild.log || true
             exit 1
           fi
 

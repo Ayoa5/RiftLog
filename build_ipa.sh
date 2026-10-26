@@ -47,18 +47,42 @@ fi
 info "拉取依赖"
 flutter pub get
 
+# ── 构建 ───────────────────────────────────────────────────
+# 注意：flutter create 不生成 Podfile；--config-only 会生成 Podfile 并跑 pod install
+info "生成构建配置（config-only）"
+flutter build ios --release --config-only
+
 if [ -f "ios/Podfile" ] && command -v pod >/dev/null 2>&1; then
   info "pod install"
   (cd ios && pod install --repo-update)
-else
-  ok "ios/Podfile 尚未生成 —— 由 flutter build ios 自动创建并 pod install"
 fi
 
-# ── 构建 ───────────────────────────────────────────────────
-info "构建 iOS release（无签名）"
-flutter build ios --release --no-codesign
+# 直接 xcodebuild + 显式关闭签名。
+# 原因：flutter build ios --no-codesign 在「无 DEVELOPMENT_TEAM 的工程」上
+# 仍会被 Xcode 15+ 的签名校验拦住。
+info "Xcode 无签名构建"
+(
+  cd ios
+  for f in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
+    if [ -f "$f" ] && ! grep -q CODE_SIGNING_ALLOWED "$f"; then
+      echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
+    fi
+  done
+  xcodebuild \
+    -workspace Runner.xcworkspace \
+    -scheme Runner \
+    -configuration Release \
+    -sdk iphoneos \
+    -destination 'generic/platform=iOS' \
+    -derivedDataPath ../build/ios_dd \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGN_IDENTITY="" \
+    CODE_SIGN_ENTITLEMENTS="" \
+    build | tail -30
+)
 
-APP_PATH="build/ios/iphoneos/Runner.app"
+APP_PATH="build/ios_dd/Build/Products/Release-iphoneos/Runner.app"
 [ -d "$APP_PATH" ] || die "构建产物不存在：$APP_PATH"
 
 # ── 打包 ───────────────────────────────────────────────────
