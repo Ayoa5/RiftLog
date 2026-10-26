@@ -28,6 +28,7 @@ String _firstOf(dynamic v) {
 class ScoreItem {
   const ScoreItem({
     required this.nodeId,
+    required this.bizId,
     required this.name,
     required this.kind,
     required this.score,
@@ -38,6 +39,9 @@ class ScoreItem {
   });
 
   final int nodeId;
+
+  /// 选手/教练的 bizId（如 Gumayusi=79822）。评论接口用它，不是 nodeId
+  final int bizId;
   final String name;
 
   /// player / coach / bpHero / ''（解说等杂项）
@@ -67,6 +71,7 @@ class ScoreItem {
 
     return ScoreItem(
       nodeId: asInt(item['nodeId'] ?? node['nodeId']),
+      bizId: asInt(node['bizId']),
       name: asString(node['name']),
       kind: _firstOf(info['type']),
       score: asDouble(node['scoreAvg']),

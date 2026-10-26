@@ -8,6 +8,7 @@
 //      ⇒ 用「锚点 + 向两侧逐号探测，连续 N 次未命中即停」来发现比赛
 //   4. 单场信息全在 detail.infoJson（队名/比分/队标/赛事/阶段/时间/状态）
 
+import '../models/comment_models.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
 import 'hupu_client.dart';
@@ -138,6 +139,65 @@ class HupuMatchService {
       return b.bizId.compareTo(a.bizId);
     });
     return list;
+  }
+
+  // ───────────────────────── 评论 ─────────────────────────
+
+  /// 拉取某个评分对象的评论（实测只有 lol_item 有数据）
+  ///
+  /// [type] 例：lol_item；[no] 选手 bizId
+  /// [order] HOT=最亮 / NEW=最新（服务端接受任意字符串，按需扩展）
+  Future<CommentPage> fetchComments({
+    required String type,
+    required String no,
+    String order = 'HOT',
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    try {
+      final json = await _client.getJson(
+        '$apiBase/bpl/comment/list',
+        query: {
+          'outBizType': type,
+          'outBizNo': no,
+          'publishTime': 0,
+          'order': order,
+          'page': page,
+          'pageSize': pageSize,
+        },
+        okCodes: const <int>{1},
+      );
+      final data = (json['data'] as Map?)?.cast<String, dynamic>();
+      if (data == null) {
+        return const CommentPage(
+          items: <HupuComment>[],
+          total: 0,
+          hasMore: false,
+        );
+      }
+      final list = data['comments'];
+      final items = <HupuComment>[];
+      if (list is List) {
+        for (final e in list) {
+          if (e is Map<String, dynamic>) {
+            final c = HupuComment.fromJson(e);
+            if (c.content.isNotEmpty) items.add(c);
+          }
+        }
+      }
+      final total = data['commentCount'];
+      return CommentPage(
+        items: items,
+        total: total is num ? total.toInt() : items.length,
+        hasMore: data['hasMore'] == true,
+      );
+    } catch (_) {
+      return const CommentPage(
+        items: <HupuComment>[],
+        total: 0,
+        hasMore: false,
+      );
+    }
   }
 
   // ───────────────────────── 内部 ─────────────────────────

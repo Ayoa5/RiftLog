@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/providers.dart';
 import '../core/theme.dart';
+import '../models/comment_models.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
 
@@ -62,7 +63,7 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
                   ),
                   const SizedBox(height: 14),
                 ],
-                _GameScores(gameId: games[idx].bizId),
+                _GameScores(gameId: games[idx].bizId, match: match),
               ];
             },
             loading: () => <Widget>[
@@ -168,9 +169,10 @@ class _MatchHeader extends StatelessWidget {
 
 /// 某一局的选手评分（按 teamId 分组）
 class _GameScores extends ConsumerWidget {
-  const _GameScores({required this.gameId});
+  const _GameScores({required this.gameId, required this.match});
 
   final int gameId;
+  final LolMatch match;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -195,7 +197,11 @@ class _GameScores extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             for (final entry in grouped.entries) ...<Widget>[
-              _TeamSection(teamId: entry.key, items: entry.value),
+              _TeamSection(
+                teamId: entry.key,
+                items: entry.value,
+                match: match,
+              ),
               const SizedBox(height: 14),
             ],
           ],
@@ -211,10 +217,32 @@ class _GameScores extends ConsumerWidget {
 }
 
 class _TeamSection extends StatelessWidget {
-  const _TeamSection({required this.teamId, required this.items});
+  const _TeamSection({
+    required this.teamId,
+    required this.items,
+    required this.match,
+  });
 
   final String teamId;
   final List<ScoreItem> items;
+  final LolMatch match;
+
+  /// teamId → 队名：用比赛的 home/away 映射，查不到才退回原始 id
+  String get _teamName {
+    if (teamId.isNotEmpty && teamId == match.homeTeamId) return match.homeTeam;
+    if (teamId.isNotEmpty && teamId == match.awayTeamId) return match.awayTeam;
+    return '队伍 $teamId';
+  }
+
+  String get _teamLogo {
+    if (teamId.isNotEmpty && teamId == match.homeTeamId) {
+      return match.homeLogo;
+    }
+    if (teamId.isNotEmpty && teamId == match.awayTeamId) {
+      return match.awayLogo;
+    }
+    return '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -239,11 +267,31 @@ class _TeamSection extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              '队伍 $teamId',
-              style: Theme.of(context).textTheme.labelLarge,
+            if (_teamLogo.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: Image.network(
+                      _teamLogo,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+            Flexible(
+              child: Text(
+                _teamName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             Text(
               '${sorted.length} 人',
               style: Theme.of(context)
@@ -254,7 +302,12 @@ class _TeamSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        ...sorted.map((e) => _ScoreRow(item: e)),
+        ...sorted.map(
+          (e) => GestureDetector(
+            onTap: () => _showComments(context, e),
+            child: _ScoreRow(item: e),
+          ),
+        ),
       ],
     );
   }
@@ -381,6 +434,270 @@ class _EmptyHint extends StatelessWidget {
                 ?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 打开某位选手的评论区
+void _showComments(BuildContext context, ScoreItem item) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => _CommentsSheet(item: item),
+  );
+}
+
+/// 评论区（实测评论挂在选手节点上，比赛/局级的 commentCount 为 0）
+class _CommentsSheet extends ConsumerStatefulWidget {
+  const _CommentsSheet({required this.item});
+
+  final ScoreItem item;
+
+  @override
+  ConsumerState<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
+  /// HOT = 最亮，NEW = 最新
+  String _order = 'HOT';
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final query = CommentQuery(
+      type: 'lol_item',
+      no: widget.item.bizId.toString(),
+      order: _order,
+    );
+    final async = ref.watch(commentsProvider(query));
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      builder: (ctx, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '${widget.item.name} 的评论',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SegmentedButton<String>(
+                segments: const <ButtonSegment<String>>[
+                  ButtonSegment<String>(value: 'HOT', label: Text('最亮')),
+                  ButtonSegment<String>(value: 'NEW', label: Text('最新')),
+                ],
+                selected: <String>{_order},
+                onSelectionChanged: (s) =>
+                    setState(() => _order = s.first),
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStatePropertyAll<TextStyle?>(
+                    Theme.of(ctx).textTheme.labelSmall,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          async.when(
+            data: (page) {
+              if (page.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Text(
+                      '还没有评论',
+                      style: TextStyle(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '共 ${page.total} 条',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final c in page.items) _CommentTile(comment: c),
+                  if (page.hasMore)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Center(
+                        child: Text(
+                          '仅显示前 ${page.items.length} 条',
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '评论加载失败\n$e',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentTile extends StatelessWidget {
+  const _CommentTile({required this.comment});
+
+  final HupuComment comment;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card.outlined(
+        margin: EdgeInsets.zero,
+        shape: AppTheme.cardShape(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // 头像
+              ClipOval(
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: comment.userHead.isEmpty
+                      ? Container(color: cs.surfaceContainerHighest)
+                      : Image.network(
+                          comment.userHead,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              Container(color: cs.surfaceContainerHighest),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            comment.userName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                        if (comment.score > 0) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Text(
+                            '${comment.score} 分',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: cs.primary),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      comment.content,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(height: 1.45),
+                    ),
+                    if (comment.hasImage) ...<Widget>[
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          comment.images.first,
+                          height: 90,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Row(
+                      children: <Widget>[
+                        Text(
+                          <String>[
+                            if (comment.dateText.isNotEmpty) comment.dateText,
+                            if (comment.ipLocation.isNotEmpty)
+                              comment.ipLocation,
+                          ].join(' · '),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        const Spacer(),
+                        Icon(Icons.thumb_up_alt_outlined,
+                            size: 13, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${comment.lightCount}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
