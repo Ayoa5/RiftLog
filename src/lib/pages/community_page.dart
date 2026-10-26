@@ -8,6 +8,7 @@ import '../core/providers.dart';
 import '../core/theme.dart';
 import '../models/hupu_models.dart';
 import '../services/hupu_scraper_service.dart';
+import 'about_page.dart';
 import 'thread_detail_page.dart';
 
 class CommunityPage extends ConsumerStatefulWidget {
@@ -36,6 +37,7 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
           SliverAppBar.large(
             title: const Text('英雄联盟 · 赛事'),
             actions: <Widget>[
+              const AboutIconButton(),
               IconButton(
                 tooltip: _postMatchOnly ? '显示全部' : '只看赛后',
                 icon: Icon(

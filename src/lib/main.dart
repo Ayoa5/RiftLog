@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'pages/community_page.dart';
 import 'pages/schedule_page.dart';
+import 'pages/upcoming_page.dart';
 
 void main() {
   runApp(const ProviderScope(child: HupuLolApp()));
@@ -48,7 +49,7 @@ class _RootShellState extends State<RootShell> {
         children: const <Widget>[
           SchedulePage(),
           CommunityPage(),
-          _AboutPage(),
+          UpcomingPage(),
         ],
       ),
       // 安卓风格胶囊形选中指示器
@@ -67,94 +68,12 @@ class _RootShellState extends State<RootShell> {
             label: '社区',
           ),
           NavigationDestination(
-            icon: Icon(Icons.info_outline),
-            selectedIcon: Icon(Icons.info),
-            label: '关于',
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note),
+            label: '预告',
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AboutPage extends StatelessWidget {
-  const _AboutPage();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return CustomScrollView(
-      slivers: <Widget>[
-        const SliverAppBar.large(title: Text('关于')),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          sliver: SliverList.list(
-            children: <Widget>[
-              Card.filled(
-                margin: EdgeInsets.zero,
-                shape: AppTheme.cardShape(),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '数据来源',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '虎扑社区公开页面与 API（无需登录）：\n'
-                        '· 板块列表：bbs.hupu.com/{板块} 的 SSR 数据\n'
-                        '· 帖子详情与亮评：bbs.hupu.com/api/v2/threads\n\n'
-                        '本应用为纯客户端直连，不含自建服务器，不采集、不上传任何用户数据。',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(height: 1.6),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Card.outlined(
-                margin: EdgeInsets.zero,
-                shape: AppTheme.cardShape(),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Icon(Icons.palette_outlined,
-                              size: 18, color: cs.primary),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Material You',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '界面遵循 Material Design 3：大标题折叠顶栏、胶囊导航指示器、'
-                        '24px 圆角色阶卡片。Android 上跟随壁纸取色（Monet），'
-                        'iOS 上使用蓝紫种子色派生色板。',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(height: 1.6),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

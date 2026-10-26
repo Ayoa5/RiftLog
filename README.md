@@ -85,9 +85,13 @@ project_21_LoL赛事虎扑评分App/
 │       │   ├── hupu_rating_service.dart   ← 评分（实测可用接口）
 │       │   └── rating_provider.dart  ← 正文内嵌评分抽象层（备用）
 │       └── pages/
-│           ├── schedule_page.dart    ← SliverAppBar.large + Card.filled 列表
+│           ├── schedule_page.dart    ← 赛程（已结束战报，带评分入口）
+│           ├── community_page.dart   ← 社区帖子流（含 [赛后] 过滤）
+│           ├── upcoming_page.dart    ← 预告（未开赛，来自 LPL 官方赛程）
 │           ├── thread_detail_page.dart ← 正文 + 亮评 + 评分入口
-│           └── rating_page.dart      ← 粘贴评分链接 → 全阵容评分
+│           ├── rating_page.dart      ← 粘贴评分链接 → 全阵容评分
+│           ├── match_detail_page.dart ← 比赛详情（局切换 + 评分 + 评论楼中楼）
+│           └── about_page.dart       ← 关于（右上角入口）
 ├── tools/
 │   └── probe_hupu.py                 ← 接口探针（列表/详情/评分三模式）
 └── docs/
