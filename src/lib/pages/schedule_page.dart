@@ -38,6 +38,8 @@ class SchedulePage extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async {
+        // 强制重扫虎扑节点（跳过本地缓存），再刷新列表
+        await ref.read(matchServiceProvider).discover(force: true);
         ref.invalidate(lplScheduleProvider);
         ref.invalidate(scheduleProvider);
       },

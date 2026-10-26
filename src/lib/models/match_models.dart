@@ -143,3 +143,51 @@ class LolGame {
     return LolGame(bizId: bizId, name: name, score: score);
   }
 }
+
+/// 缓存用序列化（只存必要字段，体积小）
+extension LolMatchCache on LolMatch {
+  Map<String, dynamic> toCacheJson() => <String, dynamic>{
+        'bizId': bizId,
+        'title': title,
+        'homeTeam': homeTeam,
+        'awayTeam': awayTeam,
+        'homeScore': homeScore,
+        'awayScore': awayScore,
+        'homeLogo': homeLogo,
+        'awayLogo': awayLogo,
+        'competition': competition,
+        'stage': stage,
+        'status': status,
+        'matchTime': matchTime?.millisecondsSinceEpoch ?? 0,
+        'winTeamId': winTeamId,
+        'homeTeamId': homeTeamId,
+        'awayTeamId': awayTeamId,
+      };
+}
+
+/// 从缓存恢复
+LolMatch? lolMatchFromCache(Map<String, dynamic> j) {
+  final id = j['bizId'];
+  if (id is! int || id == 0) return null;
+  final ts = j['matchTime'];
+  return LolMatch(
+    bizId: id,
+    title: (j['title'] ?? '').toString(),
+    homeTeam: (j['homeTeam'] ?? '').toString(),
+    awayTeam: (j['awayTeam'] ?? '').toString(),
+    homeScore: j['homeScore'] is int ? j['homeScore'] as int : 0,
+    awayScore: j['awayScore'] is int ? j['awayScore'] as int : 0,
+    homeLogo: (j['homeLogo'] ?? '').toString(),
+    awayLogo: (j['awayLogo'] ?? '').toString(),
+    competition: (j['competition'] ?? '').toString(),
+    stage: (j['stage'] ?? '').toString(),
+    status: (j['status'] ?? '').toString(),
+    matchTime: (ts is int && ts > 0)
+        ? DateTime.fromMillisecondsSinceEpoch(ts)
+        : null,
+    winTeamId: (j['winTeamId'] ?? '').toString(),
+    homeTeamId: (j['homeTeamId'] ?? '').toString(),
+    awayTeamId: (j['awayTeamId'] ?? '').toString(),
+  );
+}
+

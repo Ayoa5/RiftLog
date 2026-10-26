@@ -8,6 +8,10 @@
 //      ⇒ 用「锚点 + 向两侧逐号探测，连续 N 次未命中即停」来发现比赛
 //   4. 单场信息全在 detail.infoJson（队名/比分/队标/赛事/阶段/时间/状态）
 
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/comment_models.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
@@ -73,35 +77,39 @@ class HupuMatchService {
   /// ⚠️ 编号不是「一路递增」，而是**分簇的**（实测 2026-10-27）：
   ///   4501–4516 → 10-18 ~ 10-26 的比赛
   ///   4601–4610 → 10-24 ~ 10-27 的比赛（新开一段）
+  ///   4219–4222 → 10-16 ~ 10-17 入围赛（离瑞士轮那段隔了 280 个号！）
   ///   4517–4600 全空
   /// 所以不能用「从锚点逐号 ±1，连续 3 次未命中就停」——那样永远到不了新簇。
   ///
   /// 策略：
-  ///   · 首次：细网格（步长 10，seed-40~seed+400）+ 稀疏远扫（步长 50，+400~+2400）
-  ///           + 每个命中点向两侧 ±12 展开补齐整簇
-  ///   · 之后：用内存缓存做增量（从已知最大号向上探 40、向下补 10），刷新只需 1~2 秒
-  /// 全程 10 路并发。
-  Future<List<LolMatch>> discover({int seed = defaultSeed}) async {
-    if (_cache.isNotEmpty) {
-      await _refreshIncremental();
-      return _sortedCache();
+  /// 策略：
+  ///   · 本地缓存新鲜（默认 20 分钟）→ 直接返回，并在后台做增量补齐
+  ///   · 否则全量扫描：步长 3 网格 [seed-350, seed+250] + 每个命中点 ±10 展开
+  ///     （实测簇长度 4~22，步长 3 可稳定命中；步长 25 会整段漏掉）
+  ///   · 结果写入 SharedPreferences，下次启动秒开
+  /// 全程 14 路并发。
+  Future<List<LolMatch>> discover({
+    int seed = defaultSeed,
+    bool force = false,
+  }) async {
+    if (!force) {
+      final cached = await _readCache();
+      if (cached != null) {
+        _cache
+          ..clear()
+          ..addEntries(cached.items.map((m) => MapEntry(m.bizId, m)));
+        // 后台补新，不阻塞首屏
+        _refreshIncremental();
+        return _sortedCache();
+      }
     }
 
-    // ── 首次全量 ──
+    // ── 全量扫描 ──
     final grid = <int>[];
-    for (var id = seed - 40; id <= seed + 400; id += 10) {
+    for (var id = seed - 350; id <= seed + 250; id += 3) {
       if (id > 0) grid.add(id);
     }
     for (final m in await _probeMany(grid)) {
-      _cache[m.bizId] = m;
-    }
-
-    // 远端稀疏扫描：防止编号跨越式增长（如 4501 → 4601 这种跳变）
-    final far = <int>[];
-    for (var id = seed + 400; id <= seed + 2400; id += 50) {
-      far.add(id);
-    }
-    for (final m in await _probeMany(far)) {
       _cache[m.bizId] = m;
     }
 
@@ -109,7 +117,7 @@ class HupuMatchService {
     final anchors = List<int>.from(_cache.keys);
     final expand = <int>{};
     for (final a in anchors) {
-      for (var i = 1; i <= 12; i++) {
+      for (var i = 1; i <= 10; i++) {
         if (a - i > 0) expand.add(a - i);
         expand.add(a + i);
       }
@@ -119,11 +127,15 @@ class HupuMatchService {
       _cache[m.bizId] = m;
     }
 
+    await _writeCache();
     return _sortedCache();
   }
 
-  // ── 缓存 ──
+  // ── 内存缓存 ──
   final Map<int, LolMatch> _cache = <int, LolMatch>{};
+
+  static const String _prefsKey = 'hupu_match_cache_v1';
+  static const Duration _ttl = Duration(minutes: 20);
 
   int get _cacheMax =>
       _cache.isEmpty ? 0 : _cache.keys.reduce((a, b) => a > b ? a : b);
@@ -131,6 +143,7 @@ class HupuMatchService {
   /// 增量刷新：从已知最大号往上探 40、往下补 10
   Future<void> _refreshIncremental() async {
     final top = _cacheMax;
+    if (top == 0) return;
     final ids = <int>[];
     for (var i = 1; i <= 40; i++) {
       ids.add(top + i);
@@ -138,9 +151,12 @@ class HupuMatchService {
     for (var i = 1; i <= 10; i++) {
       if (top - i > 0) ids.add(top - i);
     }
+    var changed = false;
     for (final m in await _probeMany(ids)) {
       _cache[m.bizId] = m;
+      changed = true;
     }
+    if (changed) await _writeCache();
   }
 
   List<LolMatch> _sortedCache() {
@@ -154,10 +170,52 @@ class HupuMatchService {
     return list;
   }
 
-  /// 并发探测一批编号（10 路）
+  // ── 持久化 ──
+
+  Future<({List<LolMatch> items, DateTime at})?> _readCache() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString(_prefsKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      final atMs = decoded['at'];
+      if (atMs is! int) return null;
+      final at = DateTime.fromMillisecondsSinceEpoch(atMs);
+      if (DateTime.now().difference(at) > _ttl) return null;
+      final list = decoded['items'];
+      if (list is! List) return null;
+      final items = <LolMatch>[];
+      for (final e in list) {
+        if (e is Map<String, dynamic>) {
+          final m = lolMatchFromCache(e);
+          if (m != null) items.add(m);
+        }
+      }
+      if (items.isEmpty) return null;
+      return (items: items, at: at);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeCache() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final payload = <String, dynamic>{
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'items': _cache.values.map((m) => m.toCacheJson()).toList(),
+      };
+      await sp.setString(_prefsKey, jsonEncode(payload));
+    } catch (_) {
+      // 缓存失败不影响主流程
+    }
+  }
+
+  /// 并发探测一批编号（14 路）
   Future<List<LolMatch>> _probeMany(List<int> ids) async {
     final out = <LolMatch>[];
-    const batch = 10;
+    const batch = 14;
     for (var i = 0; i < ids.length; i += batch) {
       final end = (i + batch) > ids.length ? ids.length : i + batch;
       final chunk = ids.sublist(i, end);

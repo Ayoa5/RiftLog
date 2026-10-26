@@ -21,6 +21,8 @@ dependencies:
   intl: ^0.19.0
   # 莫奈动态取色（Android 生效；iOS 自动回退到 seed 色）
   dynamic_color: ^1.7.0
+  # 缓存已发现的比赛编号（避免每次启动都扫号）
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
