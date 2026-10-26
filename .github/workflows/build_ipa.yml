@@ -55,8 +55,13 @@ jobs:
           else
             echo "ios/ 已存在，跳过"
           fi
+          # flutter create 会生成引用默认 MyApp 的 widget_test.dart，本项目类名是 HupuLolApp，
+          # 留着会让 flutter analyze 报 "The name 'MyApp' isn't a class"。仓库里已有真实测试。
+          rm -f test/widget_test.dart
           echo "=== ios/ 内容 ==="
           ls -la ios/ || true
+          echo "=== test/ 内容 ==="
+          ls -la test/ || true
 
       # Podfile 由下一步的 flutter build ios --config-only 生成，这里只管依赖
       - name: 安装依赖

@@ -1,4 +1,4 @@
-# Material 3 主题：ColorScheme.fromSeed + Monte 动态取色 + 深浅色
+// Material 3 主题：ColorScheme.fromSeed + Monet 动态取色 + 深浅色
 
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
