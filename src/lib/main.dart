@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme.dart';
+import 'pages/community_page.dart';
 import 'pages/schedule_page.dart';
 
 void main() {
@@ -46,6 +47,7 @@ class _RootShellState extends State<RootShell> {
         index: _index,
         children: const <Widget>[
           SchedulePage(),
+          CommunityPage(),
           _AboutPage(),
         ],
       ),
@@ -55,9 +57,14 @@ class _RootShellState extends State<RootShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const <NavigationDestination>[
           NavigationDestination(
-            icon: Icon(Icons.sports_esports_outlined),
-            selectedIcon: Icon(Icons.sports_esports),
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
             label: '赛程',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum),
+            label: '社区',
           ),
           NavigationDestination(
             icon: Icon(Icons.info_outline),

@@ -12,7 +12,7 @@
 |---|---|---|
 | Step 1 | 项目骨架、pubspec、主题、目录结构 | ✅ 已完成 |
 | Step 2 | 虎扑抓取与解析层（列表 / 详情 / 亮评 / **评分**） | ✅ 已完成 |
-| Step 3 | 赛事列表页 / 选手评分页 / 亮评面板 | 🟡 骨架可跑，赛程列表待接 |
+| Step 3 | 赛程页 / 比赛详情（局切换）/ 社区页 / 评分页 | ✅ 已完成（三页导航 + 真实赛程） |
 | Step 4 | GitHub Actions 无签名 ipa + 本地 `build_ipa.sh` | ✅ 已完成 |
 
 **怎么打包、怎么装到手机** → 见 `docs/IPA打包指南.md`
@@ -29,7 +29,8 @@
 | 2 | 帖子详情 | `GET https://bbs.hupu.com/api/v2/threads?tid={tid}` |
 | 3 | **亮评（神评）** | 同上 → `data.lights[]` |
 | 4 | **选手评分** | `GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/score_tree/getCurAndSubNodeByBizKey` |
-| 5 | 选手→比赛反查 | 同域 `/bpl/score_tree/getSelfByBizKey` |
+| 5 | 单场比赛信息 | 同域 `/bpl/score_tree/getSelfByBizKey?outBizType=lol_match&outBizNo={id}` |
+| 6 | 局的选手评分 | 同域 `getCurAndSubNodeByBizKey?relation=CHILD&outBizType=lol_bo&outBizNo={id}` |
 
 实测样例（局 `lol_bo:7717`，iG vs HLE）：
 
@@ -42,9 +43,14 @@ Gumayusi 2.4 · Zeus 7.6 · Kanavi 4.0 · Delight 3.0 · Zeka 2.8 · 教练 Homm
 → `getCurAndSubNodeByBizKey` 取 24 条子节点 → 按 `infoJson.type` 过滤 player/coach
 → 按 `infoJson.teamId` 分阵营。
 
-**唯一缺口**：虎扑**赛程/赛事列表**接口未找到（`m.hupu.com/match`、`match-api.hupu.com/...` 均 404）。
-因此帖子 → 比赛的自动关联暂不可行，评分入口采用「粘贴评分页链接」。
-详见 `docs/虎扑接口实测记录_20261026.md` 第五节。
+**赛程怎么来的**：虎扑没有「赛事列表」接口（根节点 `lol:1` 的 subNodeCount=0，
+`lol_competition`/`lol_season` 均不存在）。但同一赛事内 `lol_match` 的 bizId **连续**
+（实测 4501–4516 连成一片），所以 App 用「锚点 + 向两侧逐号探测，连续 3 次未命中即停」来发现比赛，
+结果按 `matchTime` 倒序、按日期分组展示。
+
+**仍存在的局限**：赛事之间有较大空档（3400 是 LCK、2800 是电竞世界杯、2000 以下全空），
+跨赛事时锚点可能失效；当前用步长 8 粗扫兜底。要更稳可后续把 maxId 持久化。
+详见 `docs/虎扑接口实测记录_20261026.md` 第五、六节。
 
 ---
 

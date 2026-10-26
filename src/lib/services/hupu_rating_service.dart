@@ -79,6 +79,7 @@ class HupuRatingService {
       final json = await _client.getJson(
         '$apiBase/bpl/score_tree/getSelfByBizKey',
         query: {'outBizType': type, 'outBizNo': no},
+        okCodes: const {1},
       );
       final data = (json['data'] as Map?)?.cast<String, dynamic>();
       if (data == null) return null;
@@ -110,6 +111,7 @@ class HupuRatingService {
         'outBizType': type,
         'outBizNo': no,
       },
+      okCodes: const {1},
     );
 
     final data = (json['data'] as Map?)?.cast<String, dynamic>() ?? const {};

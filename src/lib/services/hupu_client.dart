@@ -61,9 +61,15 @@ class HupuClient {
   }
 
   /// 取 JSON（自动解码 + 校验 code 字段）
+  ///
+  /// ⚠️ 虎扑不同接口的成功码不一致：
+  ///   · bbs.hupu.com/api/v2/…   → code = 200
+  ///   · games.mobileapi.hupu.com/bplcommentapi/… → code = 1（失败为 -1）
+  /// 所以用 [okCodes] 显式声明，默认只认 200。
   Future<Map<String, dynamic>> getJson(
     String url, {
     Map<String, dynamic>? query,
+    Set<int> okCodes = const <int>{200},
   }) async {
     final raw = await _request(url, query: query);
     final Object? decoded;
@@ -76,9 +82,9 @@ class HupuClient {
       throw HupuException('响应结构异常（期望 JSON 对象）');
     }
     final code = decoded['code'];
-    if (code is int && code != 200) {
+    if (code is int && !okCodes.contains(code)) {
       throw HupuException(
-        (decoded['message'] ?? '接口返回错误').toString(),
+        (decoded['message'] ?? decoded['msg'] ?? '接口返回错误').toString(),
         statusCode: code,
       );
     }

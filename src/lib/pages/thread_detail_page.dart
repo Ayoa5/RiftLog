@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
 import '../models/hupu_models.dart';
+import '../core/providers.dart';
 import '../services/hupu_scraper_service.dart';
 import 'rating_page.dart';
-import 'schedule_page.dart' show scraperProvider;
 
 final threadBundleProvider =
     FutureProvider.autoDispose.family<ThreadBundle, int>(

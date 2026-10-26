@@ -9,13 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/providers.dart';
 import '../core/theme.dart';
 import '../models/rating_models.dart';
 import '../services/hupu_client.dart';
 import '../services/hupu_rating_service.dart';
-
-final ratingServiceProvider =
-    Provider<HupuRatingService>((ref) => HupuRatingService());
 
 class RatingPage extends ConsumerStatefulWidget {
   const RatingPage({super.key, this.initialUrl});
