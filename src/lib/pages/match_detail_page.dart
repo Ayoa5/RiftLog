@@ -607,7 +607,12 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
               ),
             ),
 
-          for (final c in _items) _CommentTile(comment: c),
+          for (final c in _items)
+            _CommentTile(
+              comment: c,
+              bizNo: widget.item.bizId.toString(),
+              bizType: 'lol_item',
+            ),
 
           // 加载更多
           if (_hasMore)
@@ -632,8 +637,286 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   }
 }
 
-class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment});
+/// 单条评论（含楼中楼展开）
+///
+/// 实测：`subCommentCount>0` 的评论占多数（50 条里 33 条有子回复），
+/// 子回复接口是 `primarySingleRow/getMore`（不是 subCommentList，后者返回 null）。
+class _CommentTile extends ConsumerStatefulWidget {
+  const _CommentTile({
+    required this.comment,
+    required this.bizNo,
+    required this.bizType,
+  });
+
+  final HupuComment comment;
+
+  /// 选手 bizId
+  final String bizNo;
+  final String bizType;
+
+  @override
+  ConsumerState<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends ConsumerState<_CommentTile> {
+  final List<HupuComment> _subs = <HupuComment>[];
+  int? _cursor;
+  bool _hasMore = false;
+  bool _loading = false;
+  bool _expanded = false;
+  String? _error;
+
+  Future<void> _toggle() async {
+    if (_expanded) {
+      setState(() => _expanded = false);
+      return;
+    }
+    setState(() => _expanded = true);
+    if (_subs.isEmpty && !_loading) await _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await ref.read(matchServiceProvider).fetchSubComments(
+            type: widget.bizType,
+            no: widget.bizNo,
+            parentId: int.tryParse(widget.comment.id) ?? 0,
+            publishTime: _cursor ?? widget.comment.publishTime,
+          );
+      if (!mounted) return;
+      setState(() {
+        _subs.addAll(page.items);
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final c = widget.comment;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card.outlined(
+        margin: EdgeInsets.zero,
+        shape: AppTheme.cardShape(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  ClipOval(
+                    child: SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: c.userHead.isEmpty
+                          ? Container(color: cs.surfaceContainerHighest)
+                          : Image.network(
+                              c.userHead,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  Container(color: cs.surfaceContainerHighest),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Flexible(
+                              child: Text(
+                                c.userName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                            if (c.score > 0) ...<Widget>[
+                              const SizedBox(width: 6),
+                              Text(
+                                '${c.score} 分',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(color: cs.primary),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          c.content,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(height: 1.45),
+                        ),
+                        if (c.hasImage) ...<Widget>[
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              c.images.first,
+                              height: 90,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          children: <Widget>[
+                            Text(
+                              <String>[
+                                if (c.dateText.isNotEmpty) c.dateText,
+                                if (c.ipLocation.isNotEmpty) c.ipLocation,
+                              ].join(' · '),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                            const Spacer(),
+                            Icon(Icons.thumb_up_alt_outlined,
+                                size: 13, color: cs.onSurfaceVariant),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${c.lightCount}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // 楼中楼入口
+              if (c.subCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 42, top: 2),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _toggle,
+                      icon: Icon(
+                        _expanded
+                            ? Icons.expand_less
+                            : Icons.subdirectory_arrow_right,
+                        size: 15,
+                      ),
+                      label: Text(
+                        _expanded
+                            ? '收起回复'
+                            : '查看 ${c.subCount} 条回复',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // 子回复列表
+              if (_expanded) ...<Widget>[
+                const SizedBox(height: 4),
+                Container(
+                  margin: const EdgeInsets.only(left: 42),
+                  padding: const EdgeInsets.only(left: 10),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: cs.outlineVariant, width: 2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      if (_loading && _subs.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 10),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            '子回复加载失败',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: cs.error),
+                          ),
+                        ),
+                      for (final s in _subs) _SubCommentRow(comment: s),
+                      if (_hasMore)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2, bottom: 4),
+                          child: TextButton(
+                            onPressed: _loading ? null : _loadMore,
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              _loading ? '加载中…' : '加载更多回复',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 子回复行（比主评论紧凑，无卡片）
+class _SubCommentRow extends StatelessWidget {
+  const _SubCommentRow({required this.comment});
 
   final HupuComment comment;
 
@@ -642,116 +925,73 @@ class _CommentTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Card.outlined(
-        margin: EdgeInsets.zero,
-        shape: AppTheme.cardShape(),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              ClipOval(
-                child: SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: comment.userHead.isEmpty
-                      ? Container(color: cs.surfaceContainerHighest)
-                      : Image.network(
-                          comment.userHead,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(color: cs.surfaceContainerHighest),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: Text(
-                            comment.userName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                        ),
-                        if (comment.score > 0) ...<Widget>[
-                          const SizedBox(width: 6),
-                          Text(
-                            '${comment.score} 分',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: cs.primary),
-                          ),
-                        ],
-                      ],
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          ClipOval(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: comment.userHead.isEmpty
+                  ? Container(color: cs.surfaceContainerHighest)
+                  : Image.network(
+                      comment.userHead,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          Container(color: cs.surfaceContainerHighest),
                     ),
-                    const SizedBox(height: 4),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  comment.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  comment.content,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(height: 1.4),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: <Widget>[
                     Text(
-                      comment.content,
+                      comment.dateText,
                       style: Theme.of(context)
                           .textTheme
-                          .bodyMedium
-                          ?.copyWith(height: 1.45),
+                          .labelSmall
+                          ?.copyWith(color: cs.outline, fontSize: 10),
                     ),
-                    if (comment.hasImage) ...<Widget>[
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          comment.images.first,
-                          height: 90,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const SizedBox.shrink(),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 6),
-                    Row(
-                      children: <Widget>[
-                        Text(
-                          <String>[
-                            if (comment.dateText.isNotEmpty) comment.dateText,
-                            if (comment.ipLocation.isNotEmpty)
-                              comment.ipLocation,
-                          ].join(' · '),
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                        const Spacer(),
-                        Icon(Icons.thumb_up_alt_outlined,
-                            size: 13, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${comment.lightCount}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ],
+                    const Spacer(),
+                    Icon(Icons.thumb_up_alt_outlined,
+                        size: 11, color: cs.outline),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${comment.lightCount}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: cs.outline, fontSize: 10),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

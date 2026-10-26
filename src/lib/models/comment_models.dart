@@ -21,6 +21,8 @@ class HupuComment {
     required this.score,
     required this.ipLocation,
     required this.occasion,
+    required this.subCount,
+    required this.publishTime,
   });
 
   final String id;
@@ -39,6 +41,12 @@ class HupuComment {
 
   /// 如「发布于比赛中」
   final String occasion;
+
+  /// 子回复数量（楼中楼），>0 时可展开
+  final int subCount;
+
+  /// 发布时间戳（ms），拉子回复时作为 publishTime 游标
+  final int publishTime;
 
   bool get hasImage => images.isNotEmpty;
 
@@ -67,6 +75,8 @@ class HupuComment {
       score: _i(j['score']),
       ipLocation: (j['ipLocation'] ?? '').toString(),
       occasion: (j['commentOccasionText'] ?? '').toString(),
+      subCount: _i(j['subCommentCount'] ?? j['descendantCount']),
+      publishTime: _i(j['publishTime']),
     );
   }
 

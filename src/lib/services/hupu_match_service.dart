@@ -210,6 +210,62 @@ class HupuMatchService {
     }
   }
 
+  /// 拉取某条评论的**子回复**（楼中楼）
+  ///
+  /// 实测（2026-10-26）：`subCommentList` 返回 data=null，真正的楼中楼接口是 `getMore`：
+  ///   GET bpl/comment/list/primarySingleRow/getMore
+  ///       ?publishTime=<父评论 publishTime 或上一页 cursor>
+  ///       &outBizNo=&outBizType=&queryType=asc&parentCommentId=<父评论id>
+  ///       &pageSize=20&clientCode=&cid=
+  Future<CommentPage> fetchSubComments({
+    required String type,
+    required String no,
+    required int parentId,
+    required int publishTime,
+    int pageSize = 20,
+  }) async {
+    try {
+      final json = await _client.getJson(
+        '$apiBase/bpl/comment/list/primarySingleRow/getMore',
+        query: {
+          'publishTime': publishTime,
+          'outBizNo': no,
+          'outBizType': type,
+          'queryType': 'asc',
+          'parentCommentId': parentId,
+          'pageSize': pageSize,
+          'clientCode': '',
+          'cid': '',
+        },
+        okCodes: const <int>{1},
+      );
+      final data = (json['data'] as Map?)?.cast<String, dynamic>();
+      if (data == null) {
+        return const CommentPage(
+          items: <HupuComment>[],
+          total: 0,
+          hasMore: false,
+        );
+      }
+      final items = _parseCommentList(data['comments']);
+      final cur = (data['cursor'] as Map?)?.cast<String, dynamic>();
+      final next = cur?['publishTime'];
+      final total = data['commentCount'];
+      return CommentPage(
+        items: items,
+        total: total is num ? total.toInt() : items.length,
+        hasMore: data['hasMore'] == true && items.isNotEmpty,
+        nextCursor: next is num ? next.toInt() : null,
+      );
+    } catch (_) {
+      return const CommentPage(
+        items: <HupuComment>[],
+        total: 0,
+        hasMore: false,
+      );
+    }
+  }
+
   /// 最亮：独立接口，返回裸数组（约 50 条，按亮数降序）
   Future<CommentPage> _fetchBrightest(String type, String no) async {
     final json = await _client.getJson(
