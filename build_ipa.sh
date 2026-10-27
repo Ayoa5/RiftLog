@@ -44,6 +44,12 @@ else
   ok "ios/ 已存在"
 fi
 
+# 应用「评」字 AppIcon（Any / Dark / Tinted 三态）
+if [ -f "tools/apply_ios_icons.sh" ]; then
+  info "应用自定义 AppIcon"
+  bash tools/apply_ios_icons.sh
+fi
+
 info "拉取依赖"
 flutter pub get
 

@@ -63,6 +63,14 @@ jobs:
           echo "=== test/ 内容 ==="
           ls -la test/ || true
 
+      # 「评」字图标：单尺寸 + iOS 18 深色/着色三态，交给 actool 自动生成其余尺寸
+      - name: 应用自定义 AppIcon
+        working-directory: src
+        run: |
+          bash tools/apply_ios_icons.sh
+          echo "=== AppIcon 目录 ==="
+          ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset/ || true
+
       # Podfile 由下一步的 flutter build ios --config-only 生成，这里只管依赖
       - name: 安装依赖
         working-directory: src
