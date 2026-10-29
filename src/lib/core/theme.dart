@@ -10,8 +10,8 @@ class AppTheme {
   /// 选蓝紫色：接近 LoL 视觉，且 M3 派生出的 tonal palette 对比度舒适。
   static const Color seedColor = Color(0xFF5B4BD6);
 
-  /// 统一大圆角（需求：24px）
-  static const double radius = 24;
+  /// 统一圆角：14px —— 介于 iOS 分组列表（10）与 M3（16）之间
+  static const double radius = 14;
 
   static ThemeData light(ColorScheme? dynamic) =>
       _build(dynamic ?? ColorScheme.fromSeed(seedColor: seedColor));
@@ -24,7 +24,23 @@ class AppTheme {
             ),
       );
 
-  static ThemeData _build(ColorScheme cs) {
+  /// iOS 风格中性色面：保留 seed 派生的 primary/secondary（品牌色），
+  /// 把 surface 家族换成中性灰阶 —— iOS 的层次靠明度差，M3 靠色调。
+  static ColorScheme _neutralize(ColorScheme cs) {
+    final dark = cs.brightness == Brightness.dark;
+    return cs.copyWith(
+      surface: dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7),
+      surfaceContainerLowest: dark ? const Color(0xFF0A0A0B) : const Color(0xFFFFFFFF),
+      surfaceContainerLow: dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF),
+      surfaceContainer: dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF),
+      surfaceContainerHigh: dark ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EE),
+      surfaceContainerHighest: dark ? const Color(0xFF3A3A3C) : const Color(0xFFE3E3E8),
+      outlineVariant: dark ? const Color(0xFF38383A) : const Color(0xFFD1D1D6),
+    );
+  }
+
+  static ThemeData _build(ColorScheme raw) {
+    final cs = _neutralize(raw);
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
@@ -33,7 +49,7 @@ class AppTheme {
       // 安卓大标题折叠顶栏：去掉默认着色与阴影，靠色阶区分层级
       appBarTheme: AppBarTheme(
         backgroundColor: cs.surface,
-        surfaceTintColor: cs.surfaceTint,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: cs.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -56,7 +72,7 @@ class AppTheme {
         space: 1,
       ),
 
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: NoSplash.splashFactory,
     );
   }
 
