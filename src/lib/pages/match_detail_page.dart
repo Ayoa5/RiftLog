@@ -22,6 +22,9 @@ class MatchDetailPage extends ConsumerStatefulWidget {
 class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
   int _gameIndex = 0;
 
+  /// 进行中的比赛首次加载时自动跳到最后一局（当前正在打的那局）
+  bool _autoPicked = false;
+
   @override
   Widget build(BuildContext context) {
     final match = widget.match;
@@ -47,7 +50,17 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
                   const _EmptyHint(text: '这场比赛还没有可用的评分数据'),
                 ];
               }
-              final idx = _gameIndex.clamp(0, games.length - 1);
+              final int idx = _gameIndex.clamp(0, games.length - 1);
+              if (!_autoPicked) {
+                _autoPicked = true;
+                if (!match.isCompleted && games.length > 1) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() => _gameIndex = games.length - 1);
+                    }
+                  });
+                }
+              }
               return <Widget>[
                 if (games.length > 1) ...<Widget>[
                   Wrap(

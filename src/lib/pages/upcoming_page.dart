@@ -54,7 +54,11 @@ class UpcomingPage extends ConsumerWidget {
           ),
           ...async.when<List<Widget>>(
             data: (all) {
-              final upcoming = LplScheduleService.upcoming(all);
+              // 已过开赛时间的场次归到「赛程」页的进行中，预告页只留真正未开赛的
+              final now = DateTime.now();
+              final upcoming = LplScheduleService.upcoming(all)
+                  .where((m) => m.date == null || now.isBefore(m.date!))
+                  .toList();
               if (upcoming.isEmpty) {
                 return <Widget>[
                   SliverFillRemaining(

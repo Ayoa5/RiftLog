@@ -131,6 +131,19 @@ class HupuMatchService {
     return _sortedCache();
   }
 
+  /// 只刷新单场比赛（比赛中每分钟调用，1 次请求，成本极低）
+  ///
+  /// discover() 会做全量/增量扫描（几十次请求），不适合高频调用；
+  /// 比分变化只需要重新拉这一个节点。
+  Future<LolMatch?> refreshOne(int bizId) async {
+    final m = await fetchMatch(bizId);
+    if (m != null) {
+      _cache[m.bizId] = m;
+      await _writeCache();
+    }
+    return m;
+  }
+
   // ── 内存缓存 ──
   final Map<int, LolMatch> _cache = <int, LolMatch>{};
 
