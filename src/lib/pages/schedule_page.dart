@@ -13,6 +13,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/build_info.dart';
 import '../core/providers.dart';
 import '../core/team_alias.dart';
 import '../core/theme.dart';
@@ -94,7 +95,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '进行中每分钟自动刷新 · 带评分可点开看选手打分与评论',
+                      '进行中每分钟自动刷新 · 带评分可点开看评论 · v$kAppVersion',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
