@@ -1,7 +1,7 @@
 name: hupu_lol
 description: LoL 赛事 + 虎扑选手评分（Material You / 莫奈风格，iOS 无签名 ipa）
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

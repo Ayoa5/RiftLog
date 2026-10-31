@@ -737,12 +737,12 @@ class _CommentTileState extends ConsumerState<_CommentTile> {
                       width: 32,
                       height: 32,
                       child: c.userHead.isEmpty
-                          ? Container(color: cs.surfaceContainerHighest)
+                          ? Container(color: cs.surfaceContainerHigh)
                           : Image.network(
                               c.userHead,
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
-                                  Container(color: cs.surfaceContainerHighest),
+                                  Container(color: cs.surfaceContainerHigh),
                             ),
                     ),
                   ),
@@ -947,12 +947,12 @@ class _SubCommentRow extends StatelessWidget {
               width: 22,
               height: 22,
               child: comment.userHead.isEmpty
-                  ? Container(color: cs.surfaceContainerHighest)
+                  ? Container(color: cs.surfaceContainerHigh)
                   : Image.network(
                       comment.userHead,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) =>
-                          Container(color: cs.surfaceContainerHighest),
+                          Container(color: cs.surfaceContainerHigh),
                     ),
             ),
           ),

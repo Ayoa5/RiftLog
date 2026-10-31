@@ -1,6 +1,7 @@
 // 社区页：虎扑英雄联盟板块帖子流（含 [赛后] 过滤）
 // 纯 Material 3，无任何 Cupertino 组件
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,18 +35,21 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
       },
       child: CustomScrollView(
         slivers: <Widget>[
-          SliverAppBar.large(
-            title: const Text('英雄联盟 · 赛事'),
-            actions: <Widget>[
-              const AboutIconButton(),
-              IconButton(
-                tooltip: _postMatchOnly ? '显示全部' : '只看赛后',
-                icon: Icon(
-                  _postMatchOnly ? Icons.filter_alt : Icons.filter_alt_outlined,
+          CupertinoSliverNavigationBar(
+            largeTitle: const Text('英雄联盟 · 赛事'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const AboutIconButton(),
+                IconButton(
+                  tooltip: _postMatchOnly ? '显示全部' : '只看赛后',
+                  icon: Icon(
+                    _postMatchOnly ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  ),
+                  onPressed: () => setState(() => _postMatchOnly = !_postMatchOnly),
                 ),
-                onPressed: () => setState(() => _postMatchOnly = !_postMatchOnly),
-              ),
-            ],
+              ],
+            ),
           ),
           SliverToBoxAdapter(
             child: Padding(

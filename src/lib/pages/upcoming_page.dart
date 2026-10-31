@@ -3,6 +3,7 @@
 // 虎扑只有「已开赛/已结束」的比赛节点，所以预告单独做成一个板块，
 // 数据源是腾讯 LPL 官网的 LOL_MATCH2_MATCH_HOMEPAGE_BMATCH_LIST_{gameId}.js。
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,9 +28,9 @@ class UpcomingPage extends ConsumerWidget {
       },
       child: CustomScrollView(
         slivers: <Widget>[
-          SliverAppBar.large(
-            title: const Text('预告'),
-            actions: const <Widget>[AboutIconButton()],
+          CupertinoSliverNavigationBar(
+            largeTitle: const Text('预告'),
+            trailing: const AboutIconButton(),
           ),
           SliverToBoxAdapter(
             child: Padding(

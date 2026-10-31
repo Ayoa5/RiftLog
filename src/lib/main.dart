@@ -9,6 +9,7 @@
 
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +34,34 @@ class HupuLolApp extends StatelessWidget {
         theme: light,
         darkTheme: dark,
         themeMode: ThemeMode.system,
+        // 让 Cupertino 组件（大标题导航栏）跟着 Material 主题走，
+        // 否则深色模式下导航栏会是亮色的。
+        builder: (context, child) {
+          final m = Theme.of(context);
+          final onSurface = m.colorScheme.onSurface;
+          return CupertinoTheme(
+            data: CupertinoThemeData(
+              brightness: m.brightness,
+              primaryColor: m.colorScheme.primary,
+              scaffoldBackgroundColor: m.colorScheme.surface,
+              barBackgroundColor: m.colorScheme.surface,
+              textTheme: CupertinoTextThemeData(
+                navLargeTitleTextStyle: TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.37,
+                  color: onSurface,
+                ),
+                navTitleTextStyle: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: onSurface,
+                ),
+              ),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const RootShell(),
       ),
     );

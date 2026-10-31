@@ -9,6 +9,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -79,9 +80,9 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
       },
       child: CustomScrollView(
         slivers: <Widget>[
-          SliverAppBar.large(
-            title: const Text('赛程'),
-            actions: const <Widget>[AboutIconButton()],
+          CupertinoSliverNavigationBar(
+            largeTitle: const Text('赛程'),
+            trailing: const AboutIconButton(),
           ),
           SliverToBoxAdapter(
             child: Padding(

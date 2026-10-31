@@ -34,7 +34,8 @@ class AppTheme {
       surfaceContainerLow: dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF),
       surfaceContainer: dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF),
       surfaceContainerHigh: dark ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EE),
-      surfaceContainerHighest: dark ? const Color(0xFF3A3A3C) : const Color(0xFFE3E3E8),
+      // Card.filled 用的就是这个色：iOS 是「灰底白卡」，所以浅色取纯白
+      surfaceContainerHighest: dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF),
       outlineVariant: dark ? const Color(0xFF38383A) : const Color(0xFFD1D1D6),
     );
   }
@@ -91,7 +92,7 @@ class AppTheme {
       return (bg: cs.secondaryContainer, fg: cs.onSecondaryContainer);
     }
     if (score >= 5.0) {
-      return (bg: cs.surfaceContainerHighest, fg: cs.onSurfaceVariant);
+      return (bg: cs.surfaceContainerHigh, fg: cs.onSurfaceVariant);
     }
     return (bg: cs.errorContainer, fg: cs.onErrorContainer);
   }
