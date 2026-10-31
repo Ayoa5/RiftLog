@@ -10,8 +10,8 @@ class AppTheme {
   /// 选蓝紫色：接近 LoL 视觉，且 M3 派生出的 tonal palette 对比度舒适。
   static const Color seedColor = Color(0xFF5B4BD6);
 
-  /// 统一圆角：14px —— 介于 iOS 分组列表（10）与 M3（16）之间
-  static const double radius = 14;
+  /// 统一圆角：10px —— 对齐 iOS 分组列表（inset grouped）
+  static const double radius = 10;
 
   static ThemeData light(ColorScheme? dynamic) =>
       _build(dynamic ?? ColorScheme.fromSeed(seedColor: seedColor));
@@ -45,6 +45,9 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
+      // M3 的 textTheme 默认是 Roboto；用 Cupertino 的系统字体名，
+      // iOS 上会解析成 SF Pro（中文仍回退到苹方），观感立刻贴近系统
+      fontFamily: 'CupertinoSystemText',
       scaffoldBackgroundColor: cs.surface,
 
       // 安卓大标题折叠顶栏：去掉默认着色与阴影，靠色阶区分层级

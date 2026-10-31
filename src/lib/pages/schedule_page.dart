@@ -150,21 +150,27 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
               if (live.isNotEmpty) {
                 slivers.add(_sectionTitle(context, '进行中', '${live.length} 场',
                     color: cs.primary));
-                for (final e in live) {
-                  slivers.add(SliverToBoxAdapter(
-                    child: _MatchRow(lpl: e.$1, hupu: e.$2, live: true),
-                  ));
-                }
+                slivers.add(SliverToBoxAdapter(
+                  child: _GroupedCard(
+                    children: <Widget>[
+                      for (final e in live)
+                        _MatchRow(lpl: e.$1, hupu: e.$2, live: true),
+                    ],
+                  ),
+                ));
               }
               if (finished.isNotEmpty) {
                 slivers.add(_sectionTitle(
                     context, '已结束', '${finished.length} 场',
                     color: cs.onSurfaceVariant));
-                for (final e in finished) {
-                  slivers.add(SliverToBoxAdapter(
-                    child: _MatchRow(lpl: e.$1, hupu: e.$2, live: false),
-                  ));
-                }
+                slivers.add(SliverToBoxAdapter(
+                  child: _GroupedCard(
+                    children: <Widget>[
+                      for (final e in finished)
+                        _MatchRow(lpl: e.$1, hupu: e.$2, live: false),
+                    ],
+                  ),
+                ));
               }
               slivers.add(
                 const SliverToBoxAdapter(child: SizedBox(height: 20)),
@@ -390,22 +396,48 @@ class _MatchRow extends StatelessWidget {
       ),
     );
 
+    // 只返回行内容，卡片由外层的 _GroupedCard 统一包（iOS 分组列表：一张卡多行）
+    return hasRating
+        ? InkWell(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => MatchDetailPage(match: hupu!),
+              ),
+            ),
+            child: content,
+          )
+        : content;
+  }
+}
+
+/// iOS 分组列表：一张卡片装多行，行间只有一条内缩的细线
+class _GroupedCard extends StatelessWidget {
+  const _GroupedCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(Divider(
+          height: 0.5,
+          thickness: 0.5,
+          indent: 16,
+          color: cs.outlineVariant.withOpacity(0.55),
+        ));
+      }
+      rows.add(children[i]);
+    }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Card.filled(
         margin: EdgeInsets.zero,
         shape: AppTheme.cardShape(),
         clipBehavior: Clip.antiAlias,
-        child: hasRating
-            ? InkWell(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => MatchDetailPage(match: hupu!),
-                  ),
-                ),
-                child: content,
-              )
-            : content,
+        child: Column(children: rows),
       ),
     );
   }
