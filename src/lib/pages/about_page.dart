@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../core/build_info.dart';
 import '../core/theme.dart';
 
 class AboutPage extends StatelessWidget {
@@ -15,6 +16,42 @@ class AboutPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
+          // 版本卡片：用来确认手机上装的是哪一次构建
+          Card.outlined(
+            margin: EdgeInsets.zero,
+            shape: AppTheme.cardShape(),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Icon(Icons.info_outline, size: 18, color: cs.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        '版本 $kAppVersion',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$kBuildStage',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$kBuildDate · $kBuildCommit',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Card.filled(
             margin: EdgeInsets.zero,
             shape: AppTheme.cardShape(),
