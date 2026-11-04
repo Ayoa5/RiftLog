@@ -244,10 +244,11 @@ class HupuMatchService {
 
   /// 拉取某个评分对象的评论
   ///
-  /// 实测（2026-10-26）：三种排序走不同接口/参数
-  ///   最亮 → GET bpl/comment/list/primarySingleRow/hottest（data 是数组，约 50 条）
-  ///   最晚 → GET bpl/comment/list/primarySingleRow?order=desc&publishTime=<最近一页的 cursor>
-  ///   最早 → GET bpl/comment/list/primarySingleRow?order=asc&publishTime=<上一页 cursor>
+  /// 实测（2026-11-04 修正）：三者都走 primarySingleRow，靠 order 区分
+  ///   最晚 → order=desc&publishTime=<当前时间，翻页用上一页 cursor>
+  ///   最早 → order=asc&publishTime=<0，翻页用上一页 cursor>
+  ///   最亮 → 虎扑传 order 空，但公开 GET 实测返回空数组 ⇒ 改走 desc 时间流，
+  ///          再由界面按 lightCount 降序重排（可分页，等效「点赞最高」）
   ///
   /// 注意：之前用的 `bpl/comment/list` 是另一个接口，固定返回 10 条且忽略排序，
   /// 不要再用。
@@ -259,21 +260,20 @@ class HupuMatchService {
     int pageSize = 10,
   }) async {
     try {
-      if (sort == CommentSort.brightest) {
-        return _fetchBrightest(type, no);
-      }
+      // 「最亮」没有可分页的热度接口（虎扑传 order 空，公开 GET 实测返回空数组），
+      // 统一走可分页的时间流：latest/brightest 用 desc，earliest 用 asc；
+      // 「最亮」由界面按 lightCount 降序重排，等效「点赞最高」且能持续翻页。
+      final bool descending = sort != CommentSort.earliest;
 
-      // latest：首屏用「当前时间」作为游标；earliest：用 0
+      // 首屏游标：desc 用「当前时间」，asc 用 0
       final publishTime = cursor ??
-          (sort == CommentSort.latest
-              ? DateTime.now().millisecondsSinceEpoch
-              : 0);
+          (descending ? DateTime.now().millisecondsSinceEpoch : 0);
 
       final json = await _client.getJson(
         '$apiBase/bpl/comment/list/primarySingleRow',
         query: {
           'publishTime': publishTime,
-          'order': sort == CommentSort.latest ? 'desc' : 'asc',
+          'order': descending ? 'desc' : 'asc',
           'outBizType': type,
           'outBizNo': no,
           'clientCode': '',
@@ -363,27 +363,6 @@ class HupuMatchService {
         hasMore: false,
       );
     }
-  }
-
-  /// 最亮：独立接口，返回裸数组（约 50 条，按亮数降序）
-  Future<CommentPage> _fetchBrightest(String type, String no) async {
-    final json = await _client.getJson(
-      '$apiBase/bpl/comment/list/primarySingleRow/hottest',
-      query: {
-        'outBizType': type,
-        'outBizNo': no,
-        'clientCode': '',
-        'cid': '',
-      },
-      okCodes: const <int>{1},
-    );
-    final items = _parseCommentList(json['data']);
-    return CommentPage(
-      items: items,
-      total: items.length,
-      hasMore: false,
-      nextCursor: null,
-    );
   }
 
   List<HupuComment> _parseCommentList(dynamic raw) {

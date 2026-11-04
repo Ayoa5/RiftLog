@@ -523,8 +523,9 @@ void _showComments(BuildContext context, ScoreItem item) {
 
 /// 评论区
 ///
-/// 实测（2026-10-26）虎扑三种排序走不同接口：
-///   最亮 → primarySingleRow/hottest（裸数组，约 50 条，按亮数降序）
+/// 实测（2026-11-04 修正）：
+///   最亮 → 无独立可分页接口（虎扑传 order 空，公开 GET 返回空数组）；
+///          改为多拉几页 desc 时间流后按 lightCount 降序重排（可分页）
 ///   最晚 → primarySingleRow?order=desc&publishTime=<当前时间ms>
 ///   最早 → primarySingleRow?order=asc&publishTime=0
 /// 翻页：把上一页的 cursor.publishTime 作为下一轮 publishTime 传回。
@@ -567,19 +568,34 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     });
 
     try {
-      final page = await ref.read(matchServiceProvider).fetchComments(
-            type: 'lol_item',
-            no: widget.item.bizId.toString(),
-            sort: _sort,
-            cursor: _cursor,
-          );
-      if (!mounted) return;
-      setState(() {
+      final svc = ref.read(matchServiceProvider);
+      // 「最亮」没有可分页的热度接口（虎扑传 order 空，实测返回空数组），
+      // 改为一次多拉几页时间流，再按亮数降序重排 —— 等效「点赞最高」，且能一直翻。
+      final int pagesPerLoad = _sort == CommentSort.brightest ? 3 : 1;
+      for (var i = 0; i < pagesPerLoad; i++) {
+        final page = await svc.fetchComments(
+          type: 'lol_item',
+          no: widget.item.bizId.toString(),
+          sort: _sort,
+          cursor: _cursor,
+        );
+        if (!mounted) return;
+        if (reset && i == 0) _total = page.total;
         _items.addAll(page.items);
         _cursor = page.nextCursor;
         _hasMore = page.hasMore;
-        if (reset) _total = page.total;
-      });
+        if (!page.hasMore || page.items.isEmpty) break;
+      }
+      if (_sort == CommentSort.brightest) {
+        // 亮数降序；同亮数按发布时间新的在前，保证稳定排序
+        _items.sort((a, b) {
+          final byLight = b.lightCount.compareTo(a.lightCount);
+          return byLight != 0
+              ? byLight
+              : b.publishTime.compareTo(a.publishTime);
+        });
+      }
+      setState(() {});
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {

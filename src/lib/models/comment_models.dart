@@ -108,8 +108,9 @@ class CommentPage {
 
 /// 评论排序方式 —— 对应虎扑评分页的三个 tab
 ///
-/// 实测（2026-10-26）三者走的参数/接口完全不同：
-///   最亮 = GET primarySingleRow/hottest（返回数组，50 条，按亮数降序）
+/// 实测（2026-11-04 修正）：
+///   最亮 = 虎扑传 order 空（公开 GET 实测返回空数组）⇒ 本 App 改走 desc 时间流
+///          + 客户端按 lightCount 降序重排，可分页（等效「点赞从高到低」）
 ///   最晚 = GET primarySingleRow?order=desc&publishTime=<当前ms>
 ///   最早 = GET primarySingleRow?order=asc&publishTime=0
 enum CommentSort {
