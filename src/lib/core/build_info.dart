@@ -11,4 +11,4 @@ const String kBuildStage = '选手英雄头像（修正英雄图 CDN 路径判�
 
 /// 与 commit 对齐，便于回溯
 const String kBuildDate = '2026-11-04';
-const String kBuildCommit = 'pending';
+const String kBuildCommit = 'afeedd1';
