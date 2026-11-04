@@ -524,8 +524,7 @@ void _showComments(BuildContext context, ScoreItem item) {
 /// 评论区
 ///
 /// 实测（2026-11-04 修正）：
-///   最亮 → 无独立可分页接口（虎扑传 order 空，公开 GET 返回空数组）；
-///          改为连续多拉几页时间流、尽量拉全后按 lightCount 降序重排（可分页）
+///   最亮 → /hottest 取真高赞前 N 条 + 时间流分页补充，去重后按 lightCount 降序
 ///   最晚 → primarySingleRow?order=desc&publishTime=<当前时间ms>
 ///   最早 → primarySingleRow?order=asc&publishTime=0
 /// 翻页：把上一页的 cursor.publishTime 作为下一轮 publishTime 传回。
@@ -572,13 +571,17 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
       final no = widget.item.bizId.toString();
 
       if (_sort == CommentSort.brightest) {
-        // 「最亮」没有可分页的热度接口（虎扑传 order 空，公开 GET 返回空数组）。
-        // 只拉最新几页再排序会退化成时间序（最新评论点赞本来就低），
-        // 所以这里连续多拉几页、把评论尽量拉全，再按 lightCount 降序重排。
-        // 每批最多 20 页（≈200 条），「加载更多」再继续拉下一批。
-        const int maxPages = 20;
+        // 「最亮」= 虎扑「亮回复」(`/hottest` 的真高赞前 N 条) + 时间流分页补充。
+        // 真高赞评论常在几千条之前，只拉时间流根本够不到（拉到的都是最新低赞），
+        // 所以 reset 时先取 /hottest 拿到真顶部；「加载更多」再从时间流补。
+        if (reset) {
+          final hot = await svc.fetchHottestComments(type: 'lol_item', no: no);
+          if (!mounted) return;
+          _items.addAll(hot);
+        }
+        const int pagesPerLoad = 3;
         var pages = 0;
-        while (pages < maxPages) {
+        while (pages < pagesPerLoad) {
           final page = await svc.fetchComments(
             type: 'lol_item',
             no: no,
@@ -593,7 +596,15 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
           pages++;
           if (!page.hasMore || page.items.isEmpty) break;
         }
-        // 亮数降序；同亮数按发布时间新的在前，保证稳定排序
+        // 去重（/hottest 与时间流可能重叠）后按点赞降序；同亮按时间新→旧
+        final seen = <String>{};
+        final uniq = <HupuComment>[];
+        for (final c in _items) {
+          if (c.id.isEmpty || seen.add(c.id)) uniq.add(c);
+        }
+        _items
+          ..clear()
+          ..addAll(uniq);
         _items.sort((a, b) {
           final byLight = b.lightCount.compareTo(a.lightCount);
           return byLight != 0

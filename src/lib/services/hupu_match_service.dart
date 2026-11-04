@@ -247,8 +247,7 @@ class HupuMatchService {
   /// 实测（2026-11-04 修正）：三者都走 primarySingleRow，靠 order 区分
   ///   最晚 → order=desc&publishTime=<当前时间，翻页用上一页 cursor>
   ///   最早 → order=asc&publishTime=<0，翻页用上一页 cursor>
-  ///   最亮 → 虎扑传 order 空，但公开 GET 实测返回空数组 ⇒ 改走 desc 时间流，
-  ///          再由界面按 lightCount 降序重排（可分页，等效「点赞最高」）
+  ///   最亮 → 时间流只作「加载更多」补充；真高赞顶部由 fetchHottestComments(/hottest) 提供
   ///
   /// 注意：之前用的 `bpl/comment/list` 是另一个接口，固定返回 10 条且忽略排序，
   /// 不要再用。
@@ -306,6 +305,33 @@ class HupuMatchService {
         total: 0,
         hasMore: false,
       );
+    }
+  }
+
+  /// 「最亮」的真高赞顶部：虎扑「亮回复」(`/hottest`)。
+  ///
+  /// 实测（2026-11-04）：返回裸数组，给该选手热度最高的前 N 条
+  /// （N 随热度 8~28 不等，Wei=28、Dhokla=8），**顺序不严格**，
+  /// 调用方需按 `lightCount` 重排。真高赞常不在最新几百条里，
+  /// 只拉时间流够不到，所以「最亮」必须先取这个接口。
+  Future<List<HupuComment>> fetchHottestComments({
+    required String type,
+    required String no,
+  }) async {
+    try {
+      final json = await _client.getJson(
+        '$apiBase/bpl/comment/list/primarySingleRow/hottest',
+        query: {
+          'outBizType': type,
+          'outBizNo': no,
+          'clientCode': '',
+          'cid': '',
+        },
+        okCodes: const <int>{1},
+      );
+      return _parseCommentList(json['data']);
+    } catch (_) {
+      return const <HupuComment>[];
     }
   }
 
