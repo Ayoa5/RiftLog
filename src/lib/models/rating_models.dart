@@ -18,6 +18,12 @@ double asDouble(dynamic v) {
 
 String asString(dynamic v) => v == null ? '' : v.toString();
 
+/// 虎扑缺英雄数据时使用的共用默认图哈希（`/editor/6488fab0a2d3…`）。
+/// 实测被多名不同选手复用，出现即代表「无英雄数据」，不能当英雄显示。
+const List<String> _hupuDefaultChampionPics = <String>[
+  '6488fab0a2d3deb3294b0716678a5d3c',
+];
+
 /// infoJson 里的值统一是「单元素数组」，例如 {"type":["player"],"teamId":["2"]}
 String _firstOf(dynamic v) {
   if (v is List && v.isNotEmpty) return asString(v.first);
@@ -59,10 +65,12 @@ class ScoreItem {
 
   /// 本局使用的英雄头像 URL。
   ///
-  /// 实测（2026-11-04）：虎扑把选手本局英雄图放在 `infoJson.auxiliaryPic[0]`，
-  /// 命中时形如 `https://p1.hoopchina.com.cn/gdc/lol/champion/pic/<hash>.png`；
-  /// 数据缺失时会退化成队徽/编辑图等兜底图（路径不含 `/champion/pic/`），
-  /// 为避免把兜底图误当英雄，这里只认官方英雄图 CDN，其余置空。
+  /// 实测（2026-11-04）：虎扑把选手本局英雄图放在 `infoJson.auxiliaryPic[0]`。
+  /// 英雄图的 CDN 路径**不固定**：官方方图标在 `/gdc/lol/champion/pic/`，
+  /// 也有上传到 `/reply/`、`/blogfile/`、`activity-static` 的英雄图（都是英雄）；
+  /// 只有**缺数据**时会退化成一张共用的 `/editor/6488fab0a2d3…` 默认图
+  /// （实测被 JiaQi / Supa / Berserker 等多名选手复用），这张要排除，
+  /// 否则会显示错误英雄。排除后置空，由界面显示占位。
   final String championPic;
 
   bool get isPlayer => kind == 'player';
@@ -83,7 +91,10 @@ class ScoreItem {
     final aux = (auxRaw is List && auxRaw.isNotEmpty)
         ? asString(auxRaw.first)
         : asString(auxRaw);
-    final championPic = aux.contains('/champion/pic/') ? aux : '';
+    // 英雄图路径不固定（见字段注释），只排除那张共用默认图
+    final isFallback =
+        aux.isEmpty || _hupuDefaultChampionPics.any((m) => aux.contains(m));
+    final championPic = isFallback ? '' : aux;
 
     return ScoreItem(
       nodeId: asInt(item['nodeId'] ?? node['nodeId']),

@@ -4,11 +4,11 @@
 // 而 iOS 桌面又看不到版本号。每个改动阶段递增 [_buildStage]，打包后
 // 在「关于」页顶部就能一眼确认是不是新包。
 
-const String kAppVersion = '1.3.1';
+const String kAppVersion = '1.3.2';
 
 /// 界面改造阶段标识 —— 每次大改动就改这里，并在关于页展示
-const String kBuildStage = '选手英雄头像（每局所用英雄）';
+const String kBuildStage = '选手英雄头像（修正英雄图 CDN 路径判定）';
 
 /// 与 commit 对齐，便于回溯
 const String kBuildDate = '2026-11-04';
-const String kBuildCommit = 'df5eff5';
+const String kBuildCommit = 'pending';

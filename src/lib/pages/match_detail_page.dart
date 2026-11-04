@@ -446,6 +446,8 @@ class _ChampionThumb extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(8);
 
+    // 极少数确实没有英雄数据时，用选手首字母做占位，避免"图片加载失败"的观感。
+    final initial = item.name.isNotEmpty ? item.name.substring(0, 1) : '·';
     Widget placeholder() => Container(
           width: _size,
           height: _size,
@@ -454,7 +456,14 @@ class _ChampionThumb extends StatelessWidget {
             borderRadius: radius,
           ),
           alignment: Alignment.center,
-          child: Icon(Icons.shield_outlined, size: 18, color: cs.outline),
+          child: Text(
+            initial,
+            style: TextStyle(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+          ),
         );
 
     if (item.championPic.isEmpty) return placeholder();
