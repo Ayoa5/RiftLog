@@ -11,4 +11,4 @@ const String kBuildStage = '选手英雄头像（每局所用英雄）';
 
 /// 与 commit 对齐，便于回溯
 const String kBuildDate = '2026-11-04';
-const String kBuildCommit = 'pending';
+const String kBuildCommit = 'df5eff5';
