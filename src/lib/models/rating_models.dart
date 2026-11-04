@@ -36,6 +36,7 @@ class ScoreItem {
     required this.teamId,
     required this.kda,
     required this.avatar,
+    required this.championPic,
   });
 
   final int nodeId;
@@ -56,6 +57,14 @@ class ScoreItem {
   final String kda;
   final String avatar;
 
+  /// 本局使用的英雄头像 URL。
+  ///
+  /// 实测（2026-11-04）：虎扑把选手本局英雄图放在 `infoJson.auxiliaryPic[0]`，
+  /// 命中时形如 `https://p1.hoopchina.com.cn/gdc/lol/champion/pic/<hash>.png`；
+  /// 数据缺失时会退化成队徽/编辑图等兜底图（路径不含 `/champion/pic/`），
+  /// 为避免把兜底图误当英雄，这里只认官方英雄图 CDN，其余置空。
+  final String championPic;
+
   bool get isPlayer => kind == 'player';
   bool get isCoach => kind == 'coach';
 
@@ -69,6 +78,13 @@ class ScoreItem {
     final a = _firstOf(info['assistCount']);
     final kda = (k.isNotEmpty && k != '-') ? '$k/$d/$a' : '';
 
+    // 本局英雄头像：auxiliaryPic 是单元素数组（偶尔是字符串）
+    final auxRaw = info['auxiliaryPic'];
+    final aux = (auxRaw is List && auxRaw.isNotEmpty)
+        ? asString(auxRaw.first)
+        : asString(auxRaw);
+    final championPic = aux.contains('/champion/pic/') ? aux : '';
+
     return ScoreItem(
       nodeId: asInt(item['nodeId'] ?? node['nodeId']),
       bizId: asInt(node['bizId']),
@@ -79,6 +95,7 @@ class ScoreItem {
       teamId: _firstOf(info['teamId']),
       kda: kda,
       avatar: (img is List && img.isNotEmpty) ? asString(img.first) : '',
+      championPic: championPic,
     );
   }
 }

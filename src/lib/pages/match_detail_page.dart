@@ -345,6 +345,8 @@ class _ScoreRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: <Widget>[
+              _ChampionThumb(item: item),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,6 +420,54 @@ class _ScoreRow extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 选手本局使用的英雄头像（虎扑 `auxiliaryPic` 里的官方英雄图）。
+///
+/// 只有「玩家 + 有英雄图」时显示；教练或数据缺失时留同宽空槽，
+/// 保证各行的姓名/评分列对齐，不引入额外视觉元素。
+class _ChampionThumb extends StatelessWidget {
+  const _ChampionThumb({required this.item});
+
+  final ScoreItem item;
+
+  static const double _size = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!item.isPlayer) {
+      return const SizedBox(width: _size, height: _size);
+    }
+
+    final cs = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(8);
+
+    Widget placeholder() => Container(
+          width: _size,
+          height: _size,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHigh,
+            borderRadius: radius,
+          ),
+          alignment: Alignment.center,
+          child: Icon(Icons.shield_outlined, size: 18, color: cs.outline),
+        );
+
+    if (item.championPic.isEmpty) return placeholder();
+
+    return ClipRRect(
+      borderRadius: radius,
+      child: SizedBox(
+        width: _size,
+        height: _size,
+        child: Image.network(
+          item.championPic,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => placeholder(),
         ),
       ),
     );
