@@ -525,7 +525,7 @@ void _showComments(BuildContext context, ScoreItem item) {
 ///
 /// 实测（2026-11-04 修正）：
 ///   最亮 → 无独立可分页接口（虎扑传 order 空，公开 GET 返回空数组）；
-///          改为多拉几页 desc 时间流后按 lightCount 降序重排（可分页）
+///          改为连续多拉几页时间流、尽量拉全后按 lightCount 降序重排（可分页）
 ///   最晚 → primarySingleRow?order=desc&publishTime=<当前时间ms>
 ///   最早 → primarySingleRow?order=asc&publishTime=0
 /// 翻页：把上一页的 cursor.publishTime 作为下一轮 publishTime 传回。
@@ -569,24 +569,30 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
     try {
       final svc = ref.read(matchServiceProvider);
-      // 「最亮」没有可分页的热度接口（虎扑传 order 空，实测返回空数组），
-      // 改为一次多拉几页时间流，再按亮数降序重排 —— 等效「点赞最高」，且能一直翻。
-      final int pagesPerLoad = _sort == CommentSort.brightest ? 3 : 1;
-      for (var i = 0; i < pagesPerLoad; i++) {
-        final page = await svc.fetchComments(
-          type: 'lol_item',
-          no: widget.item.bizId.toString(),
-          sort: _sort,
-          cursor: _cursor,
-        );
-        if (!mounted) return;
-        if (reset && i == 0) _total = page.total;
-        _items.addAll(page.items);
-        _cursor = page.nextCursor;
-        _hasMore = page.hasMore;
-        if (!page.hasMore || page.items.isEmpty) break;
-      }
+      final no = widget.item.bizId.toString();
+
       if (_sort == CommentSort.brightest) {
+        // 「最亮」没有可分页的热度接口（虎扑传 order 空，公开 GET 返回空数组）。
+        // 只拉最新几页再排序会退化成时间序（最新评论点赞本来就低），
+        // 所以这里连续多拉几页、把评论尽量拉全，再按 lightCount 降序重排。
+        // 每批最多 20 页（≈200 条），「加载更多」再继续拉下一批。
+        const int maxPages = 20;
+        var pages = 0;
+        while (pages < maxPages) {
+          final page = await svc.fetchComments(
+            type: 'lol_item',
+            no: no,
+            sort: _sort,
+            cursor: _cursor,
+          );
+          if (!mounted) return;
+          if (pages == 0 && reset) _total = page.total;
+          _items.addAll(page.items);
+          _cursor = page.nextCursor;
+          _hasMore = page.hasMore;
+          pages++;
+          if (!page.hasMore || page.items.isEmpty) break;
+        }
         // 亮数降序；同亮数按发布时间新的在前，保证稳定排序
         _items.sort((a, b) {
           final byLight = b.lightCount.compareTo(a.lightCount);
@@ -594,6 +600,18 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
               ? byLight
               : b.publishTime.compareTo(a.publishTime);
         });
+      } else {
+        final page = await svc.fetchComments(
+          type: 'lol_item',
+          no: no,
+          sort: _sort,
+          cursor: _cursor,
+        );
+        if (!mounted) return;
+        if (reset) _total = page.total;
+        _items.addAll(page.items);
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
       }
       setState(() {});
     } catch (e) {
