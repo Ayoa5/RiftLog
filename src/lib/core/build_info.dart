@@ -11,4 +11,4 @@ const String kBuildStage = '评论：最亮改为按点赞降序、可翻页';
 
 /// 与 commit 对齐，便于回溯
 const String kBuildDate = '2026-11-04';
-const String kBuildCommit = 'pending';
+const String kBuildCommit = '6a95561';
