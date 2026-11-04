@@ -11,4 +11,4 @@ const String kBuildStage = '评论：最亮取虎扑亮回复 + 分页补充';
 
 /// 与 commit 对齐，便于回溯
 const String kBuildDate = '2026-11-04';
-const String kBuildCommit = 'pending';
+const String kBuildCommit = '02d1c42';
