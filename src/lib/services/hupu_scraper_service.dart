@@ -179,6 +179,10 @@ class HupuScraperService {
     }
   }
 
+  /// 评论/亮评 HTML → 纯文本：直接去标签，`<img>`（虎扑表情 / 网络表情包）一并丢弃，
+  /// 不保留任何占位文字——表情来源混杂无法统一渲染（2026-11-07 决策）。
+  static String commentPlainText(String html) => plainTextOf(html);
+
   /// 提取正文里的图片地址（M3 卡片里可做横向图片条）
   static List<String> imageUrlsOf(String html) {
     if (html.isEmpty) return const [];

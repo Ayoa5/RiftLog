@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../models/comment_models.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
+import '../services/hupu_scraper_service.dart';
 
 class MatchDetailPage extends ConsumerStatefulWidget {
   const MatchDetailPage({super.key, required this.match});
@@ -885,7 +886,7 @@ class _CommentTileState extends ConsumerState<_CommentTile> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          c.content,
+                          HupuScraperService.commentPlainText(c.content),
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
@@ -1076,7 +1077,7 @@ class _SubCommentRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  comment.content,
+                  HupuScraperService.commentPlainText(comment.content),
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

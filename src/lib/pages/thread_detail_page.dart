@@ -471,7 +471,7 @@ class _LightCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                reply.content,
+                HupuScraperService.commentPlainText(reply.content),
                 style: Theme.of(context)
                     .textTheme
                     .bodyMedium
