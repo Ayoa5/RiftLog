@@ -4,11 +4,11 @@
 // 而 iOS 桌面又看不到版本号。每个改动阶段递增 [_buildStage]，打包后
 // 在「关于」页顶部就能一眼确认是不是新包。
 
-const String kAppVersion = '1.3.5';
+const String kAppVersion = '1.4.0';
 
 /// 界面改造阶段标识 —— 每次大改动就改这里，并在关于页展示
-const String kBuildStage = '评论：最亮取虎扑亮回复 + 分页补充';
+const String kBuildStage = '逐局胜负序列 + 评论固定头部/一键回顶';
 
 /// 与 commit 对齐，便于回溯
-const String kBuildDate = '2026-11-04';
-const String kBuildCommit = '02d1c42';
+const String kBuildDate = '2026-11-15';
+const String kBuildCommit = 'uncommitted';

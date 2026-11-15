@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/comment_models.dart';
+import '../models/game_outcome.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
 import 'hupu_client.dart';
@@ -69,6 +70,109 @@ class HupuMatchService {
     }
     return out;
   }
+
+  // ───────────────────── 逐局胜负推导 ─────────────────────
+
+  /// 算出这场比赛每一局的胜方（详细依据见 models/game_outcome.dart）
+  ///
+  /// 虎扑没有单局胜负字段，但每局选手节点带 KDA 与评分：
+  /// 用「两队击杀合计」判胜，用「两队平均评分」交叉验证，
+  /// 最后用「胜场数 == 系列赛大比分」整体自校验。
+  Future<List<GameOutcome>> fetchGameOutcomes({
+    required int matchBizId,
+    required String homeTeamId,
+    required String awayTeamId,
+    required int homeScore,
+    required int awayScore,
+  }) async {
+    final games = await fetchGames(matchBizId);
+    if (games.isEmpty) return const <GameOutcome>[];
+
+    // 并发拉取各局评分（BO5 最多 5 个请求）
+    final raw = await Future.wait(
+      games.map(
+        (g) async => _outcomeOf(
+          game: g,
+          items: await fetchGameScores(g.bizId),
+          homeTeamId: homeTeamId,
+          awayTeamId: awayTeamId,
+        ),
+      ),
+    );
+
+    final known = raw.where((o) => o.isKnown).toList(growable: false);
+    final homeWins =
+        raw.where((o) => o.winnerTeamId == homeTeamId).length;
+    final awayWins =
+        raw.where((o) => o.winnerTeamId == awayTeamId).length;
+
+    // 局数 == 大比分总和 → 系列赛已打完，要求推导结果严格对上比分；
+    // 否则是进行中的比赛（还有没打/没数据的局），只做「不能超过比分」的宽松校验。
+    final finished = (homeScore + awayScore) == raw.length;
+    final consistent = known.isNotEmpty &&
+        homeWins <= homeScore &&
+        awayWins <= awayScore &&
+        (homeWins + awayWins) == known.length &&
+        (!finished || (homeWins == homeScore && awayWins == awayScore));
+
+    return raw
+        .map((o) => o.withSeriesConsistent(consistent))
+        .toList(growable: false);
+  }
+
+  static GameOutcome _outcomeOf({
+    required LolGame game,
+    required List<ScoreItem> items,
+    required String homeTeamId,
+    required String awayTeamId,
+  }) {
+    final home = items
+        .where((e) => e.isPlayer && e.teamId == homeTeamId)
+        .toList(growable: false);
+    final away = items
+        .where((e) => e.isPlayer && e.teamId == awayTeamId)
+        .toList(growable: false);
+
+    final homeKills = _sumKills(home);
+    final awayKills = _sumKills(away);
+    final homeAvg = _avgScore(home);
+    final awayAvg = _avgScore(away);
+
+    final byKills = homeKills > awayKills
+        ? homeTeamId
+        : (awayKills > homeKills ? awayTeamId : '');
+    final byScore = homeAvg > awayAvg
+        ? homeTeamId
+        : (awayAvg > homeAvg ? awayTeamId : '');
+
+    // 优先击杀（真实比赛数据）；击杀相同或缺失时退回评分
+    final winner = byKills.isNotEmpty ? byKills : byScore;
+    final reliable = home.isNotEmpty &&
+        away.isNotEmpty &&
+        byKills.isNotEmpty &&
+        byScore.isNotEmpty &&
+        byKills == byScore;
+
+    return GameOutcome(
+      gameBizId: game.bizId,
+      gameName: game.name,
+      winnerTeamId: winner,
+      homeKills: homeKills,
+      awayKills: awayKills,
+      killsByTeam: <String, int>{homeTeamId: homeKills, awayTeamId: awayKills},
+      reliable: reliable,
+      seriesConsistent: true,
+    );
+  }
+
+  static int _sumKills(List<ScoreItem> list) => list.fold<int>(
+        0,
+        (sum, e) => sum + (int.tryParse(e.kda.split('/').first) ?? 0),
+      );
+
+  static double _avgScore(List<ScoreItem> list) => list.isEmpty
+      ? 0
+      : list.fold<double>(0, (sum, e) => sum + e.score) / list.length;
 
   // ───────────────────────── 赛程发现 ─────────────────────────
 

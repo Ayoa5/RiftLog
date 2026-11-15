@@ -14,7 +14,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme.dart';
-import 'pages/community_page.dart';
 import 'pages/schedule_page.dart';
 import 'pages/upcoming_page.dart';
 
@@ -85,7 +84,6 @@ class _RootShellState extends State<RootShell> {
         index: _index,
         children: const <Widget>[
           SchedulePage(),
-          CommunityPage(),
           UpcomingPage(),
         ],
       ),
@@ -107,7 +105,6 @@ class _GlassTabBar extends StatelessWidget {
   static const List<({IconData icon, IconData active, String label})> _tabs =
       <({IconData icon, IconData active, String label})>[
     (icon: Icons.calendar_month_outlined, active: Icons.calendar_month, label: '赛程'),
-    (icon: Icons.forum_outlined, active: Icons.forum, label: '社区'),
     (icon: Icons.event_note_outlined, active: Icons.event_note, label: '预告'),
   ];
 

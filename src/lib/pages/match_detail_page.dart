@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/providers.dart';
 import '../core/theme.dart';
 import '../models/comment_models.dart';
+import '../models/game_outcome.dart';
 import '../models/match_models.dart';
 import '../models/rating_models.dart';
 import '../services/hupu_scraper_service.dart';
@@ -30,6 +31,17 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
   Widget build(BuildContext context) {
     final match = widget.match;
     final gamesAsync = ref.watch(gamesProvider(match.bizId));
+    final outcomesAsync = ref.watch(
+      gameOutcomesProvider(
+        (
+          matchBizId: match.bizId,
+          homeTeamId: match.homeTeamId,
+          awayTeamId: match.awayTeamId,
+          homeScore: match.homeScore,
+          awayScore: match.awayScore,
+        ),
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -45,12 +57,19 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
           _MatchHeader(match: match),
           const SizedBox(height: 16),
           ...gamesAsync.when<List<Widget>>(
-            data: (games) {
-              if (games.isEmpty) {
+            data: (gamesRaw) {
+              if (gamesRaw.isEmpty) {
                 return <Widget>[
                   const _EmptyHint(text: '这场比赛还没有可用的评分数据'),
                 ];
               }
+              // 虎扑 CHILD 实测是倒序（第4局→第1局），按局号重排，
+              // 这样胜负序列和「自动跳到当前局」才是对的。
+              final games = List<LolGame>.from(gamesRaw)
+                ..sort(
+                  (a, b) => (_gameNumberOf(a.name) ?? 0)
+                      .compareTo(_gameNumberOf(b.name) ?? 0),
+                );
               final int idx = _gameIndex.clamp(0, games.length - 1);
               if (!_autoPicked) {
                 _autoPicked = true;
@@ -62,22 +81,30 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
                   });
                 }
               }
+
+              final outcomes =
+                  outcomesAsync.asData?.value ?? const <GameOutcome>[];
+              final current = _outcomeFor(outcomes, games[idx].bizId);
+
               return <Widget>[
                 if (games.length > 1) ...<Widget>[
-                  Wrap(
-                    spacing: 8,
-                    children: List<Widget>.generate(games.length, (i) {
-                      final sel = i == idx;
-                      return ChoiceChip(
-                        label: Text(games[i].name),
-                        selected: sel,
-                        onSelected: (_) => setState(() => _gameIndex = i),
-                      );
-                    }),
+                  _SeriesStrip(
+                    match: match,
+                    games: games,
+                    outcomes: outcomes,
+                    selectedIndex: idx,
+                    loading: outcomesAsync.isLoading,
+                    onTap: (i) => setState(() => _gameIndex = i),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                 ],
-                _GameScores(gameId: games[idx].bizId, match: match),
+                _GameScores(
+                  gameId: games[idx].bizId,
+                  match: match,
+                  gameName: games[idx].name,
+                  outcome: current,
+                  outcomesLoading: outcomesAsync.isLoading,
+                ),
               ];
             },
             loading: () => <Widget>[
@@ -96,6 +123,181 @@ class _MatchDetailPageState extends ConsumerState<MatchDetailPage> {
   }
 }
 
+/// 从「第4局」里取局号；解析不了返回 null
+int? _gameNumberOf(String name) {
+  final m = RegExp(r'第\s*(\d+)\s*局').firstMatch(name);
+  if (m == null) return null;
+  return int.tryParse(m.group(1)!);
+}
+
+GameOutcome? _outcomeFor(List<GameOutcome> list, int gameBizId) {
+  for (final o in list) {
+    if (o.gameBizId == gameBizId) return o;
+  }
+  return null;
+}
+
+/// 小局胜负序列条：一眼看完整场 BO 的各局胜负走势，点击可切局
+class _SeriesStrip extends StatelessWidget {
+  const _SeriesStrip({
+    required this.match,
+    required this.games,
+    required this.outcomes,
+    required this.selectedIndex,
+    required this.loading,
+    required this.onTap,
+  });
+
+  final LolMatch match;
+  final List<LolGame> games;
+  final List<GameOutcome> outcomes;
+  final int selectedIndex;
+  final bool loading;
+  final ValueChanged<int> onTap;
+
+  String _nameOf(String id) {
+    if (id.isNotEmpty && id == match.homeTeamId) return match.homeTeam;
+    if (id.isNotEmpty && id == match.awayTeamId) return match.awayTeam;
+    return '未知';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final consistent =
+        outcomes.isEmpty || outcomes.every((o) => o.seriesConsistent);
+    final winColor = const Color(0xFF2E7D32);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text(
+              '小局胜负',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '大比分 ${match.homeScore} : ${match.awayScore}',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const Spacer(),
+            if (loading)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (!consistent)
+              Text(
+                '判定存疑',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: cs.error, fontWeight: FontWeight.w600),
+              )
+            else
+              Text(
+                '与比分吻合',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: winColor, fontWeight: FontWeight.w600),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (var i = 0; i < games.length; i++) ...<Widget>[
+                _cell(context, i),
+                if (i < games.length - 1) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '蓝=主队胜 · 灰=客队胜 · 依据每局击杀，评分交叉验证',
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _cell(BuildContext context, int i) {
+    final cs = Theme.of(context).colorScheme;
+    final game = games[i];
+    final out = _outcomeFor(outcomes, game.bizId);
+    final known = out?.isKnown ?? false;
+    final isHomeWin = known && out!.winnerTeamId == match.homeTeamId;
+    final selected = i == selectedIndex;
+
+    final bg = !known
+        ? cs.surfaceContainerHighest
+        : (isHomeWin ? cs.primaryContainer : cs.tertiaryContainer);
+    final fg = !known
+        ? cs.onSurfaceVariant
+        : (isHomeWin ? cs.onPrimaryContainer : cs.onTertiaryContainer);
+    final label = known
+        ? '${_nameOf(out!.winnerTeamId)} 胜'
+        : (loading ? '判定中' : '未开赛');
+
+    return GestureDetector(
+      onTap: () => onTap(i),
+      child: Container(
+        width: 78,
+        height: 56,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? cs.primary : Colors.transparent,
+            width: selected ? 1.5 : 0,
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text(
+              game.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: fg),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MatchHeader extends StatelessWidget {
   const _MatchHeader({required this.match});
 
@@ -105,6 +307,8 @@ class _MatchHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final t = match.matchTime;
+    final winner = match.winnerName;
+    final winColor = const Color(0xFF2E7D32);
 
     return Card.filled(
       margin: EdgeInsets.zero,
@@ -132,10 +336,11 @@ class _MatchHeader extends StatelessWidget {
                     textAlign: TextAlign.end,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight:
+                              winner == match.homeTeam ? FontWeight.w800 : FontWeight.w600,
+                          color: winner == match.homeTeam ? winColor : null,
+                        ),
                   ),
                 ),
                 Padding(
@@ -152,10 +357,11 @@ class _MatchHeader extends StatelessWidget {
                     match.awayTeam,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight:
+                              winner == match.awayTeam ? FontWeight.w800 : FontWeight.w600,
+                          color: winner == match.awayTeam ? winColor : null,
+                        ),
                   ),
                 ),
               ],
@@ -183,10 +389,23 @@ class _MatchHeader extends StatelessWidget {
 
 /// 某一局的选手评分（按 teamId 分组）
 class _GameScores extends ConsumerWidget {
-  const _GameScores({required this.gameId, required this.match});
+  const _GameScores({
+    required this.gameId,
+    required this.match,
+    required this.gameName,
+    this.outcome,
+    this.outcomesLoading = false,
+  });
 
   final int gameId;
   final LolMatch match;
+
+  /// 局名，如「第4局」
+  final String gameName;
+
+  /// 本局胜负推导结果（加载中或失败时为 null）
+  final GameOutcome? outcome;
+  final bool outcomesLoading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -207,14 +426,38 @@ class _GameScores extends ConsumerWidget {
           grouped.putIfAbsent(it.teamId, () => <ScoreItem>[]).add(it);
         }
 
+        // 本局各队击杀合计（虎扑选手节点自带 KDA，是真实数据，不是推测）
+        final killsByTeam = <String, int>{};
+        for (final it in roster) {
+          if (!it.isPlayer) continue;
+          killsByTeam[it.teamId] =
+              (killsByTeam[it.teamId] ?? 0) + _killsOf(it);
+        }
+
+        // 本局胜负以推导结果为准（击杀 + 评分交叉验证 + 大比分自校验）
+        final confident = outcome?.isConfident ?? false;
+        final winnerId = confident ? (outcome!.winnerTeamId) : '';
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            _GameBanner(
+              match: match,
+              gameName: gameName,
+              killsByTeam: killsByTeam,
+              outcome: outcome,
+              outcomesLoading: outcomesLoading,
+            ),
+            const SizedBox(height: 14),
             for (final entry in grouped.entries) ...<Widget>[
               _TeamSection(
                 teamId: entry.key,
                 items: entry.value,
                 match: match,
+                isWinner: winnerId.isNotEmpty && entry.key == winnerId,
+                showResult: winnerId.isNotEmpty,
+                kills: killsByTeam[entry.key],
+                outcome: outcome,
               ),
               const SizedBox(height: 14),
             ],
@@ -230,16 +473,235 @@ class _GameScores extends ConsumerWidget {
   }
 }
 
+/// 从 "12/4/6" 里取击杀数
+int _killsOf(ScoreItem s) {
+  final first = s.kda.split('/').first;
+  return int.tryParse(first) ?? 0;
+}
+
+/// 本局概览条：第几局 + 本局胜方 + 大比分 + 双方本局击杀对比
+///
+/// 虎扑接口没有「单局胜负」字段，但每局选手节点带完整 KDA 与评分：
+/// 由 `HupuMatchService.fetchGameOutcomes` 用「两队击杀」判胜、
+/// 「平均评分」交叉验证、「胜场数 = 系列赛比分」自校验后给出结论。
+/// 结论不可靠时明确标注「待确认」，不冒充官方赛果。
+class _GameBanner extends StatelessWidget {
+  const _GameBanner({
+    required this.match,
+    required this.gameName,
+    required this.killsByTeam,
+    this.outcome,
+    this.outcomesLoading = false,
+  });
+
+  final LolMatch match;
+  final String gameName;
+  final Map<String, int> killsByTeam;
+  final GameOutcome? outcome;
+  final bool outcomesLoading;
+
+  String _nameOf(String id) {
+    if (id.isNotEmpty && id == match.homeTeamId) return match.homeTeam;
+    if (id.isNotEmpty && id == match.awayTeamId) return match.awayTeam;
+    return '未知队伍';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final homeKills = killsByTeam[match.homeTeamId] ?? 0;
+    final awayKills = killsByTeam[match.awayTeamId] ?? 0;
+    final total = homeKills + awayKills;
+    final homeRatio = total == 0 ? 0.5 : homeKills / total;
+    final out = outcome;
+    final known = out?.isKnown ?? false;
+    final confident = out?.isConfident ?? false;
+    final winnerName = known ? _nameOf(out!.winnerTeamId) : null;
+    final winColor = const Color(0xFF2E7D32);
+
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      shape: AppTheme.cardShape(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: cs.secondaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    gameName,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: cs.onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '大比分 ${match.homeScore} : ${match.awayScore}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                ),
+                const Spacer(),
+                if (winnerName != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: confident
+                          ? winColor.withOpacity(0.14)
+                          : cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.emoji_events,
+                          size: 13,
+                          color: confident ? winColor : cs.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          confident
+                              ? '本局 $winnerName 获胜'
+                              : '本局 $winnerName 领先（待确认）',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                color: confident ? winColor : cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Text(
+                    outcomesLoading ? '本局判定中…' : match.statusText,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // 本局击杀对比（真实数据）
+            Row(
+              children: <Widget>[
+                Text(
+                  match.homeTeam,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '$homeKills',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: SizedBox(
+                      height: 6,
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            flex: (homeRatio * 1000).round().clamp(1, 999).toInt(),
+                            child: ColoredBox(color: cs.primary),
+                          ),
+                          Expanded(
+                            flex: ((1 - homeRatio) * 1000)
+                                .round()
+                                .clamp(1, 999)
+                                .toInt(),
+                            child: ColoredBox(color: cs.tertiary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$awayKills',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: cs.tertiary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  match.awayTeam,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              !known
+                  ? '本局击杀对比（选手 KDA 累加），结果判定中或暂无数据'
+                  : (confident
+                      ? '依据：本局击杀 $homeKills : $awayKills，评分交叉验证且与系列赛比分吻合'
+                      : '依据：本局击杀 $homeKills : $awayKills；判定存疑，请结合比赛核对'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TeamSection extends StatelessWidget {
   const _TeamSection({
     required this.teamId,
     required this.items,
     required this.match,
+    this.isWinner = false,
+    this.showResult = false,
+    this.kills,
+    this.outcome,
   });
 
   final String teamId;
   final List<ScoreItem> items;
   final LolMatch match;
+
+  /// 本局推导结果（评论标题里展示「本局谁胜」）
+  final GameOutcome? outcome;
+
+  /// 该队是否为**本局**胜方（由逐局推导结果给出）
+  final bool isWinner;
+
+  /// 本局胜负已确定时才显示「胜/负」徽章
+  final bool showResult;
+
+  /// 本局该队击杀合计（无数据时为 null）
+  final int? kills;
+
+  bool get _isHome => teamId.isNotEmpty && teamId == match.homeTeamId;
 
   /// teamId → 队名：用比赛的 home/away 映射，查不到才退回原始 id
   String get _teamName {
@@ -258,6 +720,16 @@ class _TeamSection extends StatelessWidget {
     return '';
   }
 
+  /// 本局结果文案（只有判定可靠时才给，避免误导）
+  String? get _resultText {
+    final o = outcome;
+    if (o == null || !o.isConfident) return null;
+    final name = o.winnerTeamId == match.homeTeamId
+        ? match.homeTeam
+        : (o.winnerTeamId == match.awayTeamId ? match.awayTeam : '');
+    return name.isEmpty ? null : '本局 $name 胜';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -266,6 +738,11 @@ class _TeamSection extends StatelessWidget {
         if (a.isCoach != b.isCoach) return a.isCoach ? -1 : 1;
         return b.score.compareTo(a.score);
       });
+
+    // 主队用 primary、客队用 tertiary，和概览条里的击杀对比色保持一致
+    final teamColor = _isHome ? cs.primary : cs.tertiary;
+    final winColor = const Color(0xFF2E7D32);
+    final lossColor = cs.onSurfaceVariant;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,7 +753,7 @@ class _TeamSection extends StatelessWidget {
               width: 4,
               height: 14,
               decoration: BoxDecoration(
-                color: cs.primary,
+                color: teamColor,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -305,7 +782,38 @@ class _TeamSection extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             ),
-            const SizedBox(width: 8),
+            if (showResult) ...<Widget>[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isWinner
+                      ? winColor.withOpacity(0.14)
+                      : lossColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isWinner ? '胜' : '负',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: isWinner ? winColor : lossColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                      ),
+                ),
+              ),
+            ],
+            const Spacer(),
+            if (kills != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  '本局击杀 $kills',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: teamColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
             Text(
               '${sorted.length} 人',
               style: Theme.of(context)
@@ -318,7 +826,12 @@ class _TeamSection extends StatelessWidget {
         const SizedBox(height: 8),
         ...sorted.map(
           (e) => GestureDetector(
-            onTap: () => _showComments(context, e),
+            onTap: () => _showComments(
+              context,
+              e,
+              teamName: _teamName,
+              resultText: _resultText,
+            ),
             child: _ScoreRow(item: e),
           ),
         ),
@@ -513,12 +1026,21 @@ class _EmptyHint extends StatelessWidget {
 }
 
 /// 打开某位选手的评论区
-void _showComments(BuildContext context, ScoreItem item) {
+void _showComments(
+  BuildContext context,
+  ScoreItem item, {
+  String? teamName,
+  String? resultText,
+}) {
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => _CommentsSheet(item: item),
+    builder: (_) => _CommentsSheet(
+      item: item,
+      teamName: teamName,
+      resultText: resultText,
+    ),
   );
 }
 
@@ -530,9 +1052,15 @@ void _showComments(BuildContext context, ScoreItem item) {
 ///   最早 → primarySingleRow?order=asc&publishTime=0
 /// 翻页：把上一页的 cursor.publishTime 作为下一轮 publishTime 传回。
 class _CommentsSheet extends ConsumerStatefulWidget {
-  const _CommentsSheet({required this.item});
+  const _CommentsSheet({required this.item, this.teamName, this.resultText});
 
   final ScoreItem item;
+
+  /// 所属队伍名（用于标题里标出「这是哪一边的选手」）
+  final String? teamName;
+
+  /// 本局结果（如「本局 BLG 胜」）
+  final String? resultText;
 
   @override
   ConsumerState<_CommentsSheet> createState() => _CommentsSheetState();
@@ -547,6 +1075,32 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   bool _loading = false;
   String? _error;
   int _total = 0;
+
+  /// 爬楼超过一定距离后显示「回顶部」
+  bool _showToTop = false;
+
+  /// DraggableScrollableSheet 提供的滚动控制器（builder 里赋值，供回顶用）
+  ScrollController? _sheetController;
+
+  /// 固定头部高度（标题 + 关闭 + 排序），ListView 顶部留同样的空间
+  static const double _headerHeight = 112.0;
+
+  void _onScroll(double pixels) {
+    final show = pixels > 600;
+    if (show != _showToTop && mounted) {
+      setState(() => _showToTop = show);
+    }
+  }
+
+  void _scrollToTop() {
+    final c = _sheetController;
+    if (c == null || !c.hasClients) return;
+    c.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   void initState() {
@@ -636,32 +1190,163 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   void _changeSort(CommentSort s) {
     if (s == _sort) return;
     setState(() => _sort = s);
+    _scrollToTop();
     _load(reset: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.78,
       maxChildSize: 0.95,
-      builder: (ctx, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      builder: (ctx, controller) {
+        _sheetController = controller;
+        return Stack(
+          children: <Widget>[
+            NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                _onScroll(n.metrics.pixels);
+                return false;
+              },
+              child: ListView(
+                controller: controller,
+                // 顶部给固定头部让位，底部给「回顶部」按钮让位
+                padding: const EdgeInsets.fromLTRB(16, _headerHeight + 8, 16, 80),
+                children: <Widget>[
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text(
+                          '评论加载失败\n$_error',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ),
+
+                  if (_items.isEmpty && _loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+
+                  if (_items.isEmpty && !_loading && _error == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Text(
+                          '还没有评论',
+                          style: TextStyle(
+                              color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ),
+
+                  for (final c in _items)
+                    _CommentTile(
+                      comment: c,
+                      bizNo: widget.item.bizId.toString(),
+                      bizType: 'lol_item',
+                    ),
+
+                  // 加载更多
+                  if (_hasMore)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Center(
+                        child: _loading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : FilledButton.tonal(
+                                onPressed: () => _load(),
+                                child: const Text('加载更多'),
+                              ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // 固定头部：爬到再深也能一键关闭 / 换排序，不用滑回顶部
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: _headerHeight,
+              child: _buildHeader(ctx),
+            ),
+
+            // 悬浮「回顶部」：滚过 600px 才出现，不挡阅读
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: _buildToTopButton(ctx),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext ctx) {
+    final cs = Theme.of(ctx).colorScheme;
+    return Container(
+      height: _headerHeight,
+      decoration: BoxDecoration(
+        color: cs.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: cs.outlineVariant.withOpacity(0.5),
+            width: 0.5,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 6, 6, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          // 标题
           Row(
             children: <Widget>[
               Expanded(
-                child: Text(
-                  '${widget.item.name} 的评论',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '${widget.item.name} 的评论',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      <String>[
+                        if ((widget.resultText ?? '').isNotEmpty)
+                          widget.resultText!,
+                        if ((widget.teamName ?? '').isNotEmpty)
+                          widget.teamName!,
+                        if (widget.item.isCoach) '教练' else '选手',
+                        if (widget.item.kda.isNotEmpty)
+                          '本局 KDA ${widget.item.kda}',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
               ),
               if (_total > 0)
@@ -672,11 +1357,20 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                       .labelSmall
                       ?.copyWith(color: cs.onSurfaceVariant),
                 ),
+              IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close_rounded),
+                tooltip: '关闭评论',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(
+                  minWidth: 36,
+                  minHeight: 36,
+                ),
+                padding: EdgeInsets.zero,
+              ),
             ],
           ),
           const SizedBox(height: 8),
-
-          // 排序：最亮 / 最晚 / 最早
           Row(
             children: <Widget>[
               for (final s in CommentSort.values)
@@ -691,65 +1385,47 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 ),
             ],
           ),
-          const SizedBox(height: 10),
-
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  '评论加载失败\n$_error',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(ctx)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                ),
-              ),
-            ),
-
-          if (_items.isEmpty && _loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-
-          if (_items.isEmpty && !_loading && _error == null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Center(
-                child: Text(
-                  '还没有评论',
-                  style: TextStyle(color: cs.onSurfaceVariant),
-                ),
-              ),
-            ),
-
-          for (final c in _items)
-            _CommentTile(
-              comment: c,
-              bizNo: widget.item.bizId.toString(),
-              bizType: 'lol_item',
-            ),
-
-          // 加载更多
-          if (_hasMore)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Center(
-                child: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : FilledButton.tonal(
-                        onPressed: () => _load(),
-                        child: const Text('加载更多'),
-                      ),
-              ),
-            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildToTopButton(BuildContext ctx) {
+    final cs = Theme.of(ctx).colorScheme;
+    return AnimatedOpacity(
+      opacity: _showToTop ? 1 : 0,
+      duration: const Duration(milliseconds: 180),
+      child: IgnorePointer(
+        ignoring: !_showToTop,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Material(
+            color: cs.primaryContainer,
+            child: InkWell(
+              onTap: _scrollToTop,
+              child: SizedBox(
+                width: 62,
+                height: 56,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      size: 20,
+                      color: cs.onPrimaryContainer,
+                    ),
+                    Text(
+                      '顶部',
+                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                            color: cs.onPrimaryContainer,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -69,7 +69,6 @@ class AboutPage extends StatelessWidget {
                     '全部为公开数据，无需登录，不采集任何用户数据：\n\n'
                     '· 赛事预告：腾讯 LPL 官网静态赛程\n'
                     '· 比赛战报与选手评分：虎扑评分接口\n'
-                    '· 社区帖子与亮评：虎扑社区公开页面\n'
                     '· 评论与楼中楼：虎扑评论接口\n\n'
                     '纯客户端直连，无自建服务器。',
                     style: Theme.of(context)
